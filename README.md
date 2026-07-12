@@ -1,1 +1,0 @@
-# Deeplabv3-_mobilenet2_ruralscapes
