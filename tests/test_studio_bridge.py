@@ -206,21 +206,39 @@ def test_evaluation_backend_refuses_missing_weights(qt_app, config):
 def test_evaluation_config_uses_project_metric_convention(qt_app, config, tmp_path):
     """写给 miou_worker 的配置必须带 remove_classes，否则背景会混进平均。"""
     controller = EvaluationController()
-    backend = EvaluationBackend(config, controller)
+    #   output_dir 指向 tmp：早先这里写死了项目的 miou_out/，
+    #   跑一次测试就把真实的 eval_config.json 覆盖成 pytest 临时路径。
+    out_dir = tmp_path / "miou_out"
+    backend = EvaluationBackend(config, controller, output_dir=str(out_dir))
     weight = tmp_path / "fake.pth"
     weight.write_bytes(b"not a real checkpoint")
     #   不真的启动子进程：只检查配置文件内容
     backend.bridge.worker.start = lambda *a, **k: None
     assert backend.start(str(weight)) is True
 
-    from workstation.config import PROJECT_ROOT
-
-    written = json.loads(
-        (open(os.path.join(PROJECT_ROOT, "miou_out", "eval_config.json"),
-              encoding="utf-8")).read())
+    written = json.loads((out_dir / "eval_config.json").read_text(encoding="utf-8"))
     assert written["remove_classes"] == [0]
     assert written["class_names"] == DEFAULT_CONFIG["dataset"]["class_names"]
     assert written["split"] == "val"
+
+
+def test_evaluation_backend_does_not_touch_project_miou_out(qt_app, config, tmp_path):
+    """回归：后端默认写项目目录，但任何测试都不许污染它。"""
+    from workstation.config import PROJECT_ROOT
+
+    real = os.path.join(PROJECT_ROOT, "miou_out", "eval_config.json")
+    before = open(real, encoding="utf-8").read() if os.path.exists(real) else None
+
+    controller = EvaluationController()
+    backend = EvaluationBackend(config, controller,
+                                output_dir=str(tmp_path / "miou_out"))
+    weight = tmp_path / "fake.pth"
+    weight.write_bytes(b"x")
+    backend.bridge.worker.start = lambda *a, **k: None
+    backend.start(str(weight))
+
+    after = open(real, encoding="utf-8").read() if os.path.exists(real) else None
+    assert after == before
 
 
 def test_dataset_backend_reports_real_profile(qt_app, config):

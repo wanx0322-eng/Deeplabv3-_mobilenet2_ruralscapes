@@ -270,10 +270,14 @@ class EvaluationBackend(QObject):
     logLine = Signal(str)
     resultReady = Signal(dict)
 
-    def __init__(self, config, controller, task_manager=None, parent=None):
+    def __init__(self, config, controller, task_manager=None, parent=None,
+                 output_dir=None):
         super().__init__(parent)
         self.config = config
         self.controller = controller
+        #   评估产物目录。默认写进项目的 miou_out/，测试里指向 tmp
+        #   —— 否则跑一次测试就把真实的 eval_config.json 覆盖掉了。
+        self.output_dir = output_dir or os.path.join(PROJECT_ROOT, "miou_out")
         self.bridge = WorkerBridge(controller, task_manager, self)
         self.bridge.logLine.connect(self.logLine)
         self.bridge.resultReady.connect(self._on_result)
@@ -281,7 +285,7 @@ class EvaluationBackend(QObject):
     def _on_result(self, msg):
         if msg.get("type") == "result":
             self.controller.setReportPath(
-                os.path.join(PROJECT_ROOT, "miou_out", "mIoU.png"))
+                os.path.join(self.output_dir, "mIoU.png"))
         self.resultReady.emit(msg)
 
     @Slot(str, result=bool)
@@ -307,12 +311,12 @@ class EvaluationBackend(QObject):
             "cuda": self.config.predict.get("cuda", True),
             "voc_root": self.config.dataset["voc_root"],
             "split": self.controller.split,
-            "miou_out": "miou_out",
+            "miou_out": self.output_dir,
             #   与 get_miou.py / 训练中评估统一：背景展示但不计入平均
             "remove_classes": self.config.dataset.get("remove_classes", [0]),
         }
-        config_path = os.path.join(PROJECT_ROOT, "miou_out", "eval_config.json")
-        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        config_path = os.path.join(self.output_dir, "eval_config.json")
+        os.makedirs(self.output_dir, exist_ok=True)
         with open(config_path, "w", encoding="utf-8") as handle:
             json.dump(cfg, handle, ensure_ascii=False, indent=2)
 

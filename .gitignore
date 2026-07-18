@@ -5,12 +5,11 @@ __pycache__/
 .pytest_cache/
 .idea/
 
-# ---- 模型权重（体积大，git 不适合存二进制；请另行备份！）----
-# logs_segformer_b2/best_segformer.pth 等是本项目最有价值的产物，
-# 不进版本库不等于不用管 —— 见 README「模型库」一节，务必单独备份。
-*.pth
+# ---- 模型权重 ----
+# *.pth / *.onnx 由 Git LFS 跟踪（见 .gitattributes），不在这里忽略。
+# 注意：本仓库没有远程，LFS 对象存在 .git/lfs/objects，仍在同一块磁盘上。
+# 它防的是误删/误覆盖，不是磁盘故障 —— 异地备份仍然必须做。
 *.pt
-*.onnx
 
 # ---- 外部数据集（README 明确要求不提交）----
 data_external/
@@ -26,6 +25,8 @@ miou_out_selftest/
 # ---- 运行时产物 ----
 logs*/loss_*/
 logs*/train_config.json
+# 评估页/QML 后端每次运行都会重写它，内容含绝对路径，不该进版本库
+miou_out/eval_config.json
 miou_out/detection-results/
 .temp_miou_out/
 *.log
