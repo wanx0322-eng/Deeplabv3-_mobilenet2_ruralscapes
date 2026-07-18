@@ -1,0 +1,64 @@
+数据集 VOCdevkit  train 245 / val 50  input [256, 256]  classes 5  device cuda
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[transformers] You passed `num_labels=5` which is incompatible to the `id2label` map of length `150`.
+
+Loading weights:   0%|          | 0/380 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 380/380 [00:00<00:00, 54289.65it/s]
+[transformers] SegformerForSemanticSegmentation LOAD REPORT from: nvidia/segformer-b2-finetuned-ade-512-512
+Key                           | Status   |                                                                                                     
+------------------------------+----------+-----------------------------------------------------------------------------------------------------
+decode_head.classifier.bias   | MISMATCH | Reinit due to size mismatch - ckpt: torch.Size([150]) vs model:torch.Size([5])                      
+decode_head.classifier.weight | MISMATCH | Reinit due to size mismatch - ckpt: torch.Size([150, 768, 1, 1]) vs model:torch.Size([5, 768, 1, 1])
+
+Notes:
+- MISMATCH:	ckpt weights were loaded, but they did not match the original empty weight shapes.
+model nvidia/segformer-b2-finetuned-ade-512-512  params 27.35M
+epoch   5/200  loss 0.3264  mIoU 71.90  <- best
+epoch  10/200  loss 0.2881  mIoU 72.19  <- best
+epoch  15/200  loss 0.2294  mIoU 72.46  <- best
+epoch  20/200  loss 0.2174  mIoU 71.56
+epoch  25/200  loss 0.1985  mIoU 71.76
+epoch  30/200  loss 0.1911  mIoU 71.87
+epoch  35/200  loss 0.1716  mIoU 72.32
+epoch  40/200  loss 0.1644  mIoU 73.19  <- best
+epoch  45/200  loss 0.1647  mIoU 73.10
+epoch  50/200  loss 0.1444  mIoU 72.82
+epoch  55/200  loss 0.1560  mIoU 72.72
+epoch  60/200  loss 0.1650  mIoU 73.19
+epoch  65/200  loss 0.1564  mIoU 72.54
+epoch  70/200  loss 0.1448  mIoU 72.46
+epoch  75/200  loss 0.1364  mIoU 72.71
+epoch  80/200  loss 0.1332  mIoU 72.09
+epoch  85/200  loss 0.1419  mIoU 72.89
+epoch  90/200  loss 0.1367  mIoU 73.40  <- best
+epoch  95/200  loss 0.1305  mIoU 73.40
+epoch 100/200  loss 0.1413  mIoU 73.02
+epoch 105/200  loss 0.1253  mIoU 72.65
+epoch 110/200  loss 0.1257  mIoU 73.00
+epoch 115/200  loss 0.1306  mIoU 72.84
+epoch 120/200  loss 0.1309  mIoU 73.02
+epoch 125/200  loss 0.1262  mIoU 73.15
+epoch 130/200  loss 0.1193  mIoU 73.24
+epoch 135/200  loss 0.1182  mIoU 73.31
+epoch 140/200  loss 0.1216  mIoU 73.46  <- best
+epoch 145/200  loss 0.1202  mIoU 73.21
+epoch 150/200  loss 0.1147  mIoU 73.13
+epoch 155/200  loss 0.1098  mIoU 73.32
+epoch 160/200  loss 0.1130  mIoU 73.02
+epoch 165/200  loss 0.1149  mIoU 73.14
+epoch 170/200  loss 0.1219  mIoU 73.22
+epoch 175/200  loss 0.1134  mIoU 72.83
+epoch 180/200  loss 0.1189  mIoU 73.06
+epoch 185/200  loss 0.1090  mIoU 73.26
+epoch 190/200  loss 0.1132  mIoU 73.34
+epoch 195/200  loss 0.1068  mIoU 73.19
+epoch 200/200  loss 0.1119  mIoU 73.30
+
+==== final ====
+best @ epoch 140: fg mIoU 73.46
+  _background_    43.24   (不计入平均)
+  building        88.90
+  sky             76.26
+  tree            62.04
+  way             66.63
+weights -> logs_sf_ade\best_segformer.pth

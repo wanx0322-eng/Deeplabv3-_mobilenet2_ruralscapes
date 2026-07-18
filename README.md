@@ -50,6 +50,37 @@ python voc_annotation.py               # 重新生成数据划分（自动跳过
 | `normalize_ext.py` | 统一图片扩展名为小写（跨平台兼容） |
 | `rebuild_splits.py` | 重建 train/val 划分：验证集不动、剔除与验证集像素重复的泄漏图 |
 | `count_classes.py` | 统计各类像素占比，给出三档可直接填进配置的 `cls_weights` |
+| `paired_bootstrap.py` | 两个权重的配对 bootstrap 显著性检验（50 张验证集上判差异是否为噪声）|
+
+### 预训练底座对照：ADE20K vs Cityscapes
+
+> **已验证结论：Cityscapes 底座相对 ADE20K 没有显著提升，不要重复这个实验。**
+> 两臂同参数同 seed 重训（B2 / 200 epoch / batch 8 / lr 6e-5 / 256px / seed 11）：
+>
+> | 底座 | 前景 mIoU | way |
+> |---|---|---|
+> | `nvidia/segformer-b2-finetuned-ade-512-512` | 73.46 | 66.63 |
+> | `nvidia/segformer-b2-finetuned-cityscapes-1024-1024` | 73.85 | 68.28 |
+>
+> 点估计 +0.40，配对 bootstrap（5000 次）95% 区间 **[−0.79, +1.63] 跨过 0**，
+> P(B>A)=0.76。与 UAVid 那次的形态几乎一样：唯一明显正向的仍是 way 类（+1.65，
+> UAVid 是 +2.07），但撑不起整体显著性。
+>
+> 一个副产物：ADE 臂重跑得到 73.46，与归档的 `logs_segformer_b2`（73.45）逐类吻合，
+> 说明训练流水线在 seed 11 下可复现，归档权重确实就是默认参数产出的。
+>
+> 复现命令：
+> ```bash
+> python tools/train_segformer.py --model nvidia/segformer-b2-finetuned-ade-512-512 \
+>     --save-dir logs_sf_ade --seed 11
+> python tools/train_segformer.py --model nvidia/segformer-b2-finetuned-cityscapes-1024-1024 \
+>     --save-dir logs_sf_city --seed 11
+> python tools/paired_bootstrap.py --a logs_sf_ade/best_segformer.pth \
+>     --b logs_sf_city/best_segformer.pth
+> ```
+>
+> **若要继续追 way 类**：两次实验都指向同一处，说明这不是偶然。但单次训练对单次
+> 训练的比较分辨不出 0.4 个点的差异 —— 想确认得两臂各跑 3~5 个 seed 再比。
 
 ### 两阶段训练（领域内预训练）
 

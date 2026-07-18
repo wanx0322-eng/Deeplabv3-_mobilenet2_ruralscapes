@@ -1,0 +1,64 @@
+数据集 VOCdevkit  train 245 / val 50  input [256, 256]  classes 5  device cuda
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[transformers] You passed `num_labels=5` which is incompatible to the `id2label` map of length `19`.
+
+Loading weights:   0%|          | 0/380 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 380/380 [00:00<00:00, 74471.34it/s]
+[transformers] SegformerForSemanticSegmentation LOAD REPORT from: nvidia/segformer-b2-finetuned-cityscapes-1024-1024
+Key                           | Status   |                                                                                                    
+------------------------------+----------+----------------------------------------------------------------------------------------------------
+decode_head.classifier.bias   | MISMATCH | Reinit due to size mismatch - ckpt: torch.Size([19]) vs model:torch.Size([5])                      
+decode_head.classifier.weight | MISMATCH | Reinit due to size mismatch - ckpt: torch.Size([19, 768, 1, 1]) vs model:torch.Size([5, 768, 1, 1])
+
+Notes:
+- MISMATCH:	ckpt weights were loaded, but they did not match the original empty weight shapes.
+model nvidia/segformer-b2-finetuned-cityscapes-1024-1024  params 27.35M
+epoch   5/200  loss 0.3365  mIoU 70.75  <- best
+epoch  10/200  loss 0.2962  mIoU 71.08  <- best
+epoch  15/200  loss 0.2453  mIoU 67.85
+epoch  20/200  loss 0.2215  mIoU 70.79
+epoch  25/200  loss 0.1958  mIoU 70.73
+epoch  30/200  loss 0.1817  mIoU 72.23  <- best
+epoch  35/200  loss 0.1774  mIoU 71.63
+epoch  40/200  loss 0.1635  mIoU 72.64  <- best
+epoch  45/200  loss 0.1645  mIoU 72.83  <- best
+epoch  50/200  loss 0.1436  mIoU 73.01  <- best
+epoch  55/200  loss 0.1495  mIoU 72.07
+epoch  60/200  loss 0.1557  mIoU 71.54
+epoch  65/200  loss 0.1575  mIoU 71.92
+epoch  70/200  loss 0.1443  mIoU 71.65
+epoch  75/200  loss 0.1388  mIoU 72.43
+epoch  80/200  loss 0.1400  mIoU 72.49
+epoch  85/200  loss 0.1430  mIoU 73.21  <- best
+epoch  90/200  loss 0.1351  mIoU 67.74
+epoch  95/200  loss 0.1283  mIoU 73.14
+epoch 100/200  loss 0.1384  mIoU 73.40  <- best
+epoch 105/200  loss 0.1202  mIoU 73.23
+epoch 110/200  loss 0.1238  mIoU 72.96
+epoch 115/200  loss 0.1350  mIoU 72.60
+epoch 120/200  loss 0.1282  mIoU 73.39
+epoch 125/200  loss 0.1248  mIoU 73.44  <- best
+epoch 130/200  loss 0.1198  mIoU 73.71  <- best
+epoch 135/200  loss 0.1159  mIoU 73.45
+epoch 140/200  loss 0.1193  mIoU 73.37
+epoch 145/200  loss 0.1201  mIoU 73.35
+epoch 150/200  loss 0.1134  mIoU 73.54
+epoch 155/200  loss 0.1065  mIoU 73.68
+epoch 160/200  loss 0.1129  mIoU 73.85  <- best
+epoch 165/200  loss 0.1127  mIoU 73.64
+epoch 170/200  loss 0.1199  mIoU 73.53
+epoch 175/200  loss 0.1120  mIoU 73.64
+epoch 180/200  loss 0.1166  mIoU 73.50
+epoch 185/200  loss 0.1074  mIoU 73.60
+epoch 190/200  loss 0.1124  mIoU 73.67
+epoch 195/200  loss 0.1058  mIoU 73.78
+epoch 200/200  loss 0.1097  mIoU 73.75
+
+==== final ====
+best @ epoch 160: fg mIoU 73.85
+  _background_    44.19   (不计入平均)
+  building        89.13
+  sky             75.84
+  tree            62.15
+  way             68.28
+weights -> logs_sf_city\best_segformer.pth
