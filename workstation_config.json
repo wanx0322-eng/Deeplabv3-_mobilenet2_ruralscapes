@@ -1,0 +1,99 @@
+{
+  "dataset": {
+    "voc_root": "VOCdevkit",
+    "class_names": [
+      "_background_",
+      "building",
+      "sky",
+      "tree",
+      "way"
+    ],
+    "class_colors": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        128,
+        0,
+        0
+      ],
+      [
+        0,
+        128,
+        0
+      ],
+      [
+        128,
+        128,
+        0
+      ],
+      [
+        0,
+        0,
+        128
+      ]
+    ],
+    "trainval_percent": 1.0,
+    "train_percent": 0.7,
+    "split_seed": 0,
+    "remove_classes": [
+      0
+    ]
+  },
+  "train": {
+    "cuda": true,
+    "seed": 11,
+    "fp16": false,
+    "backbone": "mobilenet",
+    "pretrained": false,
+    "model_path": "model_data/deeplab_mobilenetv2.pth",
+    "downsample_factor": 8,
+    "input_shape": [
+      256,
+      256
+    ],
+    "init_epoch": 0,
+    "freeze_epoch": 50,
+    "freeze_batch_size": 4,
+    "unfreeze_epoch": 80,
+    "unfreeze_batch_size": 4,
+    "freeze_train": true,
+    "init_lr": 0.007,
+    "min_lr_ratio": 0.01,
+    "optimizer_type": "sgd",
+    "momentum": 0.9,
+    "weight_decay": 0.0001,
+    "lr_decay_type": "cos",
+    "save_period": 5,
+    "save_dir": "logs",
+    "eval_flag": true,
+    "eval_period": 5,
+    "dice_loss": false,
+    "focal_loss": false,
+    "cls_weights": [
+      0.943,
+      0.535,
+      1.146,
+      0.98,
+      1.396
+    ],
+    "ema": true,
+    "num_workers": 0
+  },
+  "predict": {
+    "model_path": "logs_segformer_b2/best_segformer.pth",
+    "backbone": "segformer-b2",
+    "downsample_factor": 8,
+    "input_shape": [
+      256,
+      256
+    ],
+    "cuda": true,
+    "mix_type": 0,
+    "blend_alpha": 0.7,
+    "tta": false,
+    "save_dir": "img_out"
+  }
+}

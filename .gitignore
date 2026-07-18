@@ -1,0 +1,37 @@
+# ---- 环境 ----
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.idea/
+
+# ---- 模型权重（体积大，git 不适合存二进制；请另行备份！）----
+# logs_segformer_b2/best_segformer.pth 等是本项目最有价值的产物，
+# 不进版本库不等于不用管 —— 见 README「模型库」一节，务必单独备份。
+*.pth
+*.pt
+*.onnx
+
+# ---- 外部数据集（README 明确要求不提交）----
+data_external/
+VOCdevkit_uavid/
+VOCdevkit_ruralscapes/
+
+# ---- 预测输入/输出（体积大且可再生）----
+img/
+img_out/
+img_out_selftest/
+miou_out_selftest/
+
+# ---- 运行时产物 ----
+logs*/loss_*/
+logs*/train_config.json
+miou_out/detection-results/
+.temp_miou_out/
+*.log
+stop.flag
+studio_error.log
+workstation_error.log
+
+# ---- 数据集掩码备份（148 张原始 RGB 标签，占地但需保留在本地）----
+VOCdevkit/_mask_backup_rgb/

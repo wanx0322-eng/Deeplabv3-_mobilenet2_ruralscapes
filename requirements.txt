@@ -1,0 +1,38 @@
+# DeepLabV3+ (MobileNetV2) 乡村场景语义分割
+#
+# PyTorch 请按自己的 CUDA 版本单独安装，例如 CUDA 12.8：
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+# 本环境实测：torch 2.11.0+cu128 / Python 3.12
+torch>=1.7.1
+torchvision>=0.8.2
+
+numpy
+opencv-python
+pillow
+matplotlib
+scipy
+tqdm
+
+# 训练：utils/callbacks.py 用 torch.utils.tensorboard.SummaryWriter，
+# 缺这个包会让 train.py 在 import 阶段直接崩溃
+tensorboard
+
+# summary.py 统计参数量与 FLOPs
+thop
+torchsummary
+
+# 图形工作站 (python run_workstation.py / python run_studio.py)
+PySide6
+
+# 配置校验 (workstation/config_schema.py) 与 ruralscape_studio 的领域模型
+pydantic>=2
+
+# 测试套件 (python -m pytest tests -q)
+pytest
+
+# ONNX 导出 (predict.py mode='export_onnx')
+onnx
+onnxsim
+
+# SegFormer 对照实验 (tools/train_segformer.py)
+transformers
