@@ -268,6 +268,26 @@ def test_inference_backend_refuses_without_input(qt_app, config):
     assert "输入" in controller.errorMessage
 
 
+def test_bridge_does_not_import_qtwidgets(qt_app):
+    """QML 壳的桥接层不该拖进 QtWidgets。
+
+    历史原因：WorkerProcess 曾在 workstation/widgets.py（顶层 import QtWidgets）、
+    PredictThread 曾在 pages/predict_page.py（同样）。两者已移至
+    core/qt_workers.py（QtCore-only）—— 这个测试防止有人把 import 改回去。
+    """
+    import subprocess
+
+    from workstation.config import PROJECT_ROOT
+
+    result = subprocess.run(
+        [sys.executable, "-c",
+         "import workstation.studio_bridge, sys; "
+         "print('PySide6.QtWidgets' in sys.modules)"],
+        cwd=PROJECT_ROOT, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "False"
+
+
 def test_bridge_does_not_import_torch(qt_app):
     """桥接层本身必须 torch-free，界面启动才能秒开。"""
     assert "torch" not in sys.modules or True  # 其它测试可能已加载 torch

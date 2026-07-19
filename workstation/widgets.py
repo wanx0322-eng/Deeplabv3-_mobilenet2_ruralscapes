@@ -1,19 +1,14 @@
-"""通用控件与工具"""
-import json
-import os
-import sys
+"""通用控件与工具（QtWidgets 侧）。
 
-from PySide6.QtCore import QObject, QProcess, Qt, Signal
+WorkerProcess / python_exe 已移至 workstation/core/qt_workers.py（QtCore-only，
+QML 壳也要用，不能连带 QtWidgets），这里再导出以保持旧 import 路径可用。
+"""
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QSizePolicy,
                                QVBoxLayout, QWidget)
 
-from workstation.config import PROJECT_ROOT
-
-
-def python_exe():
-    """优先使用当前解释器（venv）"""
-    return sys.executable
+from workstation.core.qt_workers import WorkerProcess, python_exe  # noqa: F401
 
 
 def pil_to_qpixmap(pil_image):
@@ -73,54 +68,6 @@ class TitledViewer(QWidget):
         self.viewer = ImageViewer()
         layout.addWidget(label)
         layout.addWidget(self.viewer, 1)
-
-
-class WorkerProcess(QObject):
-    """QProcess 包装：运行 `python -m workstation.workers.xxx --config`，
-    解析 @@JSON 行发 message 信号，其余行发 log 信号。"""
-
-    message = Signal(dict)
-    log = Signal(str)
-    finished = Signal(int)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.proc = None
-        self._buffer = ""
-
-    def is_running(self):
-        return self.proc is not None and self.proc.state() != QProcess.NotRunning
-
-    def start(self, module, config_path):
-        if self.is_running():
-            raise RuntimeError("已有任务在运行")
-        self.proc = QProcess(self)
-        self.proc.setWorkingDirectory(PROJECT_ROOT)
-        self.proc.setProcessChannelMode(QProcess.MergedChannels)
-        self.proc.readyReadStandardOutput.connect(self._on_output)
-        self.proc.finished.connect(lambda code, _status: self.finished.emit(code))
-        self.proc.start(python_exe(), ["-u", "-X", "utf8", "-m", module,
-                                       "--config", config_path])
-
-    def kill(self):
-        if self.is_running():
-            self.proc.kill()
-
-    def _on_output(self):
-        data = bytes(self.proc.readAllStandardOutput()).decode("utf-8", "replace")
-        self._buffer += data
-        while "\n" in self._buffer:
-            line, self._buffer = self._buffer.split("\n", 1)
-            line = line.rstrip("\r")
-            if not line:
-                continue
-            if line.startswith("@@"):
-                try:
-                    self.message.emit(json.loads(line[2:]))
-                    continue
-                except json.JSONDecodeError:
-                    pass
-            self.log.emit(line)
 
 
 def hline():

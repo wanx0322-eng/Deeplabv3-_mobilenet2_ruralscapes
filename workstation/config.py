@@ -32,6 +32,9 @@ DEFAULT_CONFIG = {
     "train": {
         "cuda": True,
         "seed": 11,
+        # True = 可复现（cudnn.benchmark 关闭，稍慢）；
+        # False = 允许 cudnn 自动寻优，更快但同 seed 结果不可完全复现
+        "deterministic": True,
         "fp16": False,
         "backbone": "mobilenet",         # mobilenet / xception
         "pretrained": False,

@@ -329,6 +329,7 @@ class TrainPage(QWidget):
         if self.config.train.get("cls_weights"):
             worker_cfg["cls_weights"] = self.config.train["cls_weights"]
         worker_cfg["ema"] = self.config.train.get("ema", True)
+        worker_cfg["deterministic"] = self.config.train.get("deterministic", True)
 
         if cfg["model_path"] and not os.path.exists(
                 self.config.abs_path(cfg["model_path"])):

@@ -14,77 +14,11 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox,
 from workstation.config import PROJECT_ROOT
 from workstation.core.engine import SegEngine, compose_view, mask_statistics
 from workstation.core.models import scan_weights
+from workstation.core.qt_workers import PredictThread  # noqa: F401  移至 core，此处再导出兼容旧引用
 from workstation.widgets import TitledViewer, pil_to_qpixmap
 
 IMAGE_FILTER = "图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)"
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
-
-
-class PredictThread(QThread):
-    """加载模型（如需要）并对一张或多张图片推理"""
-    loaded = Signal(str)
-    single_done = Signal(object, object)          # (PIL image, mask)
-    batch_progress = Signal(int, int, str)
-    batch_done = Signal(int, str)
-    failed = Signal(str)
-
-    def __init__(self, engine, load_params, image_paths, out_dir=None,
-                 colors=None, mode=0, alpha=0.7, save_raw_mask=False, tta=False):
-        super().__init__()
-        self.engine = engine
-        self.load_params = load_params
-        self.image_paths = image_paths
-        self.out_dir = out_dir
-        self.colors = colors
-        self.mode = mode
-        self.alpha = alpha
-        self.save_raw_mask = save_raw_mask
-        self.tta = tta
-
-    def run(self):
-        try:
-            reloaded = self.engine.load(**self.load_params)
-            if reloaded:
-                self.loaded.emit(
-                    f"模型已加载（{self.load_params['backbone']}, "
-                    f"device={self.engine.cfg['device']}）")
-        except Exception as exc:
-            self.failed.emit(str(exc))
-            return
-
-        if self.out_dir is None:
-            # 单张
-            try:
-                image = Image.open(self.image_paths[0])
-                mask = self.engine.predict_mask(image, tta=self.tta)
-                self.single_done.emit(image.convert("RGB"), mask)
-            except Exception as exc:
-                self.failed.emit(f"预测失败: {exc}")
-            return
-
-        # 批量
-        os.makedirs(self.out_dir, exist_ok=True)
-        if self.save_raw_mask:
-            os.makedirs(os.path.join(self.out_dir, "mask"), exist_ok=True)
-        count = 0
-        for i, path in enumerate(self.image_paths):
-            try:
-                image = Image.open(path)
-                mask = self.engine.predict_mask(image, tta=self.tta)
-                view = compose_view(image, mask, self.colors, self.mode, self.alpha)
-                stem = os.path.splitext(os.path.basename(path))[0]
-                view.save(os.path.join(self.out_dir, stem + ".png"))
-                if self.save_raw_mask:
-                    Image.fromarray(mask).save(
-                        os.path.join(self.out_dir, "mask", stem + ".png"))
-                count += 1
-            except Exception as exc:
-                self.batch_progress.emit(i + 1, len(self.image_paths),
-                                         f"{os.path.basename(path)} 失败: {exc}")
-                continue
-            self.batch_progress.emit(i + 1, len(self.image_paths),
-                                     os.path.basename(path))
-        self.batch_done.emit(count, self.out_dir)
 
 
 class PredictPage(QWidget):

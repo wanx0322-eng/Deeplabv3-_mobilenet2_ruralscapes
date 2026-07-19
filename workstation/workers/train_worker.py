@@ -147,7 +147,10 @@ def main():
 
     model_train = model.train()
     if cuda:
-        cudnn.benchmark = True
+        #   与 train.py 保持一致：cudnn.benchmark = True 会覆盖 seed_everything
+        #   设下的 deterministic，让上面的 seed 形同虚设。只有明确不要求
+        #   可复现时才打开它换取速度（配置 train.deterministic = false）。
+        cudnn.benchmark = not bool(cfg.get("deterministic", True))
         model_train = model_train.to(device)
 
     # ---------------- EMA（指数滑动平均权重） ----------------
@@ -206,7 +209,8 @@ def main():
     lr_scheduler_func = get_lr_scheduler(lr_decay_type, Init_lr_fit, Min_lr_fit, UnFreeze_Epoch)
 
     epoch_step = num_train // batch_size
-    epoch_step_val = num_val // batch_size
+    #   验证批数向上取整（drop_last=False），才能覆盖全部验证图 —— 与 train.py 一致
+    epoch_step_val = -(-num_val // batch_size)
     if epoch_step == 0 or epoch_step_val == 0:
         emit("error", message="数据集过小或 batch_size 过大，无法训练（每个 epoch 的步数为 0）")
         sys.exit(2)
@@ -219,8 +223,11 @@ def main():
                          num_workers=num_workers, pin_memory=True, drop_last=True,
                          collate_fn=deeplab_dataset_collate,
                          worker_init_fn=partial(worker_init_fn, rank=0, seed=seed))
-        gen_val = DataLoader(val_dataset, shuffle=True, batch_size=batch_size,
-                             num_workers=num_workers, pin_memory=True, drop_last=True,
+        #   验证集不打乱、不丢尾批 —— 否则每个 epoch 的 val_loss 是在随机的
+        #   48/50 张上算的，轮次之间不可比（train.py 已修，此处曾漏同步）。
+        #   eval_flag 关闭时最佳权重按 val_loss 挑选，这一条直接影响选型。
+        gen_val = DataLoader(val_dataset, shuffle=False, batch_size=batch_size,
+                             num_workers=num_workers, pin_memory=True, drop_last=False,
                              collate_fn=deeplab_dataset_collate,
                              worker_init_fn=partial(worker_init_fn, rank=0, seed=seed))
         return gen, gen_val
@@ -281,7 +288,7 @@ def main():
             for param in model.backbone.parameters():
                 param.requires_grad = True
             epoch_step = num_train // batch_size
-            epoch_step_val = num_val // batch_size
+            epoch_step_val = -(-num_val // batch_size)
             if epoch_step == 0 or epoch_step_val == 0:
                 emit("error", message="解冻后步数为 0，无法继续训练")
                 sys.exit(2)

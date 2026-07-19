@@ -15,7 +15,9 @@ from PySide6.QtCore import QObject, QThread, Signal, Slot
 
 from ruralscape_studio.dataset import inspect_dataset
 from workstation.config import PROJECT_ROOT
-from workstation.widgets import WorkerProcess
+#   注意来源是 core.qt_workers 而不是 widgets —— widgets 顶层 import QtWidgets，
+#   QML 壳没有理由加载它（tests/test_studio_bridge.py 有回归测试盯着）。
+from workstation.core.qt_workers import WorkerProcess
 
 
 def _fraction(current, total):
@@ -371,7 +373,7 @@ class InferenceBackend(QObject):
 
         #   torch 只在这里才被导入，界面启动阶段不受影响
         from workstation.core.engine import SegEngine
-        from workstation.pages.predict_page import PredictThread
+        from workstation.core.qt_workers import PredictThread
 
         if self._engine is None:
             self._engine = SegEngine()
