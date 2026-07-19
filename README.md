@@ -19,6 +19,24 @@
 SegFormer 权重需选择对应的 `segformer-*` 主干加载；预测页的 **TTA（高质量模式）** 对
 DeepLab 约 +0.7 mIoU，对 SegFormer-B2 无收益（可不开）。
 
+## 代码结构
+
+模型构建与前向推理只有一份实现，在 `segcore/`：
+
+| 模块 | 职责 |
+|---|---|
+| `segcore/engine.py` | 建网、载权、前向（letterbox → softmax → 去灰条 → 还原尺寸 → argmax）、TTA、`SegEngine` 缓存包装 |
+| `segcore/evaluate.py` | 统一评估协议：逐图混淆矩阵 → 指标（背景不计入平均） |
+
+所有消费方——`deeplab.py`、`utils/callbacks.py`、两个 worker、`tools/` 下的脚本、
+工作站与 QML 壳——都调用它。这条流水线曾经有 8 份各自独立的拷贝，其中
+「SegFormer 输入必须做 ImageNet 归一化」散布在 4 处，漏写不报错、只会让 mIoU
+无声下降；`compare_models.py` 与 `get_miou.py` 也因为各自持有 DeepLab-only 的前向
+而无法评估系统默认的 SegFormer 权重。`tests/test_segcore.py` 会在有人再复制一份时变红。
+
+分层：`segcore` 依赖 `utils` / `nets`，不依赖 `workstation`（GUI 层）。
+`workstation/core/engine.py` 保留为兼容层，旧 import 路径仍可用。
+
 ## 快速开始
 
 ```bash
@@ -43,7 +61,7 @@ python voc_annotation.py               # 重新生成数据划分（自动跳过
 | 脚本 | 用途 |
 |---|---|
 | `train_segformer.py` | 训练 SegFormer（`--model` 选 b0/b1/b2；支持两阶段，见下） |
-| `compare_models.py` | 多个 DeepLab 权重同口径对比，`--tta` 开测试时增强 |
+| `compare_models.py` | 多个权重同口径对比（DeepLab / SegFormer 混合皆可），`--tta` 开测试时增强 |
 | `import_external.py` | 把 RuralScapes / UAVid 等外部数据集转成本项目 VOC 格式 |
 | `external_datasets.py` | 外部数据集 → 本项目类别的映射表（可直接运行查看） |
 | `fix_rgb_masks.py` | 把 RGB 三通道标签转成索引图（原图备份到 `VOCdevkit/_mask_backup_rgb/`） |

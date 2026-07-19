@@ -23,68 +23,15 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-import cv2
 import numpy as np
 import torch
-import torch.nn.functional as F
-from PIL import Image
 
-from utils.utils import cvtColor, preprocess_input, resize_image
+from segcore import load_net, per_image_hists, read_split
 from utils.utils_metrics import mean_metric, per_class_iu
-from workstation.core.engine import SEGFORMER_HUB, is_segformer
 
-VOC = os.path.join(ROOT, "VOCdevkit", "VOC2007")
+VOC_ROOT = os.path.join(ROOT, "VOCdevkit")
 NAMES = ["_background_", "building", "sky", "tree", "way"]
 REMOVE = [0]
-MEAN = np.array([0.485, 0.456, 0.406], np.float32)
-STD = np.array([0.229, 0.224, 0.225], np.float32)
-
-
-def load_net(ckpt, backbone, num_classes, downsample_factor, device):
-    if is_segformer(backbone):
-        from transformers import SegformerForSemanticSegmentation
-        net = SegformerForSemanticSegmentation.from_pretrained(
-            SEGFORMER_HUB[backbone], num_labels=num_classes,
-            ignore_mismatched_sizes=True)
-    else:
-        from nets.deeplabv3_plus import DeepLab
-        net = DeepLab(num_classes=num_classes, backbone=backbone,
-                      downsample_factor=downsample_factor, pretrained=False)
-    net.load_state_dict(torch.load(ckpt, map_location="cpu"))
-    return net.eval().to(device)
-
-
-@torch.no_grad()
-def per_image_hists(net, backbone, stems, input_shape, num_classes, device):
-    """返回 shape=(N, C, C) 的逐图混淆矩阵 —— 配对重采样需要按图聚合。"""
-    segformer = is_segformer(backbone)
-    hists = np.zeros((len(stems), num_classes, num_classes), np.int64)
-    for i, stem in enumerate(stems):
-        img = cvtColor(Image.open(os.path.join(VOC, "JPEGImages", stem + ".png")))
-        ow, oh = img.size
-        data, nw, nh = resize_image(img, (input_shape[1], input_shape[0]))
-        arr = preprocess_input(np.array(data, np.float32))
-        if segformer:
-            arr = (arr - MEAN) / STD
-        x = torch.from_numpy(np.expand_dims(np.transpose(arr, (2, 0, 1)), 0)).to(device)
-
-        if segformer:
-            logits = net(pixel_values=x).logits
-            logits = F.interpolate(logits, size=tuple(input_shape),
-                                   mode="bilinear", align_corners=False)[0]
-        else:
-            logits = net(x)[0]
-        prob = F.softmax(logits.permute(1, 2, 0), dim=-1).cpu().numpy()
-        prob = prob[(input_shape[0] - nh) // 2:(input_shape[0] - nh) // 2 + nh,
-                    (input_shape[1] - nw) // 2:(input_shape[1] - nw) // 2 + nw]
-        pred = cv2.resize(prob, (ow, oh), interpolation=cv2.INTER_LINEAR).argmax(-1)
-
-        gt = np.array(Image.open(os.path.join(VOC, "SegmentationClass", stem + ".png")))
-        a, b = gt.flatten(), pred.flatten()
-        k = (a >= 0) & (a < num_classes)
-        hists[i] = np.bincount(num_classes * a[k].astype(int) + b[k],
-                               minlength=num_classes ** 2).reshape(num_classes, num_classes)
-    return hists
 
 
 def fg_miou(hist, num_classes):
@@ -108,7 +55,7 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     shape = [args.input_size, args.input_size]
-    stems = open(os.path.join(VOC, "ImageSets/Segmentation/val.txt")).read().split()
+    stems = read_split(VOC_ROOT, "val")
     print("验证集 %d 张，input %s，device %s\n" % (len(stems), shape, device))
 
     hists = {}
@@ -116,8 +63,8 @@ def main():
                                 ("b", args.b, args.b_backbone)):
         net = load_net(ckpt, backbone, args.num_classes,
                        args.downsample_factor, device)
-        hists[key] = per_image_hists(net, backbone, stems, shape,
-                                     args.num_classes, device)
+        hists[key] = per_image_hists(net, stems, VOC_ROOT, args.num_classes,
+                                     shape, device, backbone=backbone)
         del net
         torch.cuda.empty_cache()
 

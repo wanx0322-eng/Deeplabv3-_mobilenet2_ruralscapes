@@ -238,42 +238,16 @@ def main():
     val_ids = [line.split()[0] for line in val_lines]
 
     def evaluate_miou():
-        import cv2
-        import shutil
-        import torch.nn.functional as F
-        from PIL import Image
-        from utils.utils import cvtColor, preprocess_input, resize_image
-        from utils.utils_metrics import compute_mIoU, mean_metric
+        #   前向与评估协议全部走 segcore（全项目唯一实现），
+        #   与 get_miou.py / 工作站评估页逐位同口径。
+        from segcore import evaluate_hist, per_image_hists
 
         #   EMA 开启时评估 EMA 副本 —— 最佳权重也按它的 mIoU 挑选
         eval_net = ema_model if use_ema else model_train
-
-        miou_out = os.path.join(log_dir, ".temp_miou")
-        pred_dir = os.path.join(miou_out, "detection-results")
-        os.makedirs(pred_dir, exist_ok=True)
-        gt_dir = os.path.join(voc_path, "VOC2007/SegmentationClass/")
-        eval_net.eval()
-        with torch.no_grad():
-            for image_id in val_ids:
-                image = Image.open(os.path.join(voc_path, "VOC2007/JPEGImages/" + image_id + ".png"))
-                image = cvtColor(image)
-                orig_w, orig_h = image.size
-                image_data, nw, nh = resize_image(image, (input_shape[1], input_shape[0]))
-                image_data = np.expand_dims(np.transpose(
-                    preprocess_input(np.array(image_data, np.float32)), (2, 0, 1)), 0)
-                images = torch.from_numpy(image_data).to(device)
-                pr = eval_net(images)[0]
-                pr = F.softmax(pr.permute(1, 2, 0), dim=-1).cpu().numpy()
-                pr = pr[int((input_shape[0] - nh) // 2): int((input_shape[0] - nh) // 2 + nh),
-                        int((input_shape[1] - nw) // 2): int((input_shape[1] - nw) // 2 + nw)]
-                pr = cv2.resize(pr, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR).argmax(axis=-1)
-                Image.fromarray(np.uint8(pr)).save(os.path.join(pred_dir, image_id + ".png"))
+        hists = per_image_hists(eval_net, val_ids, voc_path, num_classes,
+                                input_shape, device, backbone=backbone)
         model_train.train()
-        # 与 get_miou.py / 评估页统一：完整混淆矩阵算指标，背景不计入平均
-        _, IoUs, _, _ = compute_mIoU(gt_dir, pred_dir, val_ids, num_classes,
-                                     None, remove_classes)
-        shutil.rmtree(miou_out, ignore_errors=True)
-        return float(mean_metric(IoUs, num_classes, remove_classes) * 100)
+        return evaluate_hist(hists.sum(0), num_classes, remove_classes)["miou"]
 
     # ---------------- 训练循环 ----------------
     weights = torch.from_numpy(cls_weights).to(device)

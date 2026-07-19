@@ -1,16 +1,12 @@
 import colorsys
-import copy
 import time
 
-import cv2
 import numpy as np
 import torch
-import torch.nn.functional as F
 from PIL import Image
-from torch import nn
 
-from nets.deeplabv3_plus import DeepLab
-from utils.utils import cvtColor, preprocess_input, resize_image, show_config
+from segcore import is_segformer, load_net, predict_prob
+from utils.utils import cvtColor, show_config
 
 
 #-----------------------------------------------------------------------------------#
@@ -35,8 +31,10 @@ class DeeplabV3(object):
         "num_classes"       : 5,
         #----------------------------------------#
         #   所使用的的主干网络：
-        #   mobilenet
-        #   xception    
+        #   mobilenet / xception          -> DeepLabV3+
+        #   segformer-b0/b1/b2            -> SegFormer
+        #   （SegFormer 权重必须搭配对应型号的主干名，
+        #     且输入会自动做 ImageNet 归一化，见 segcore.engine）
         #----------------------------------------#
         "backbone"          : "mobilenet",
         #----------------------------------------#
@@ -100,18 +98,22 @@ class DeeplabV3(object):
     #---------------------------------------------------#
     def generate(self, onnx=False):
         #-------------------------------#
-        #   载入模型与权值
+        #   载入模型与权值（构建与加载统一走 segcore）
         #-------------------------------#
-        self.net = DeepLab(num_classes=self.num_classes, backbone=self.backbone, downsample_factor=self.downsample_factor, pretrained=False)
-
-        device      = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.net.load_state_dict(torch.load(self.model_path, map_location=device))
-        self.net    = self.net.eval()
+        self.device = torch.device('cuda' if (self.cuda and not onnx) else 'cpu')
+        self.net = load_net(self.model_path, self.backbone, self.num_classes,
+                            self.downsample_factor, self.device)
+        self.segformer = is_segformer(self.backbone)
         print('{} model, and classes loaded.'.format(self.model_path))
-        if not onnx:
-            if self.cuda:
-                self.net = nn.DataParallel(self.net)
-                self.net = self.net.cuda()
+
+    #---------------------------------------------------#
+    #   统一前向：letterbox -> 网络 -> softmax -> 去灰条 -> 还原尺寸
+    #   detect_image / get_FPS / get_miou_png 以前各有一份拷贝，
+    #   现在都走 segcore.predict_prob 这一条路径。
+    #---------------------------------------------------#
+    def _predict(self, image):
+        return predict_prob(self.net, image, self.input_shape, self.device,
+                            segformer=self.segformer)
 
     #---------------------------------------------------#
     #   检测图片
@@ -122,49 +124,12 @@ class DeeplabV3(object):
         #   代码仅仅支持RGB图像的预测，所有其它类型的图像都会转化成RGB
         #---------------------------------------------------------#
         image       = cvtColor(image)
-        #---------------------------------------------------#
-        #   对输入图像进行一个备份，后面用于绘图
-        #---------------------------------------------------#
-        old_img     = copy.deepcopy(image)
+        old_img     = image.copy()
         orininal_h  = np.array(image).shape[0]
         orininal_w  = np.array(image).shape[1]
-        #---------------------------------------------------------#
-        #   给图像增加灰条，实现不失真的resize
-        #   也可以直接resize进行识别
-        #---------------------------------------------------------#
-        image_data, nw, nh  = resize_image(image, (self.input_shape[1],self.input_shape[0]))
-        #---------------------------------------------------------#
-        #   添加上batch_size维度
-        #---------------------------------------------------------#
-        image_data  = np.expand_dims(np.transpose(preprocess_input(np.array(image_data, np.float32)), (2, 0, 1)), 0)
 
-        with torch.no_grad():
-            images = torch.from_numpy(image_data)
-            if self.cuda:
-                images = images.cuda()
-                
-            #---------------------------------------------------#
-            #   图片传入网络进行预测
-            #---------------------------------------------------#
-            pr = self.net(images)[0]
-            #---------------------------------------------------#
-            #   取出每一个像素点的种类
-            #---------------------------------------------------#
-            pr = F.softmax(pr.permute(1,2,0),dim = -1).cpu().numpy()
-            #--------------------------------------#
-            #   将灰条部分截取掉
-            #--------------------------------------#
-            pr = pr[int((self.input_shape[0] - nh) // 2) : int((self.input_shape[0] - nh) // 2 + nh), \
-                    int((self.input_shape[1] - nw) // 2) : int((self.input_shape[1] - nw) // 2 + nw)]
-            #---------------------------------------------------#
-            #   进行图片的resize
-            #---------------------------------------------------#
-            pr = cv2.resize(pr, (orininal_w, orininal_h), interpolation = cv2.INTER_LINEAR)
-            #---------------------------------------------------#
-            #   取出每一个像素点的种类
-            #---------------------------------------------------#
-            pr = pr.argmax(axis=-1)
-        
+        pr = self._predict(image).argmax(axis=-1)
+
         #---------------------------------------------------------#
         #   计数
         #---------------------------------------------------------#
@@ -221,62 +186,20 @@ class DeeplabV3(object):
         return image
 
     def get_FPS(self, image, test_interval):
-        #---------------------------------------------------------#
-        #   在这里将图像转换成RGB图像，防止灰度图在预测时报错。
-        #   代码仅仅支持RGB图像的预测，所有其它类型的图像都会转化成RGB
-        #---------------------------------------------------------#
-        image       = cvtColor(image)
-        #---------------------------------------------------------#
-        #   给图像增加灰条，实现不失真的resize
-        #   也可以直接resize进行识别
-        #---------------------------------------------------------#
-        image_data, nw, nh  = resize_image(image, (self.input_shape[1],self.input_shape[0]))
-        #---------------------------------------------------------#
-        #   添加上batch_size维度
-        #---------------------------------------------------------#
-        image_data  = np.expand_dims(np.transpose(preprocess_input(np.array(image_data, np.float32)), (2, 0, 1)), 0)
-
-        with torch.no_grad():
-            images = torch.from_numpy(image_data)
-            if self.cuda:
-                images = images.cuda()
-                
-            #---------------------------------------------------#
-            #   图片传入网络进行预测
-            #---------------------------------------------------#
-            pr = self.net(images)[0]
-            #---------------------------------------------------#
-            #   取出每一个像素点的种类
-            #---------------------------------------------------#
-            pr = F.softmax(pr.permute(1,2,0),dim = -1).cpu().numpy().argmax(axis=-1)
-            #--------------------------------------#
-            #   将灰条部分截取掉
-            #--------------------------------------#
-            pr = pr[int((self.input_shape[0] - nh) // 2) : int((self.input_shape[0] - nh) // 2 + nh), \
-                    int((self.input_shape[1] - nw) // 2) : int((self.input_shape[1] - nw) // 2 + nw)]
-
+        image = cvtColor(image)
+        #   先跑一次预热（CUDA 首次调用含上下文初始化，计入会严重高估耗时）
+        self._predict(image)
         t1 = time.time()
         for _ in range(test_interval):
-            with torch.no_grad():
-                #---------------------------------------------------#
-                #   图片传入网络进行预测
-                #---------------------------------------------------#
-                pr = self.net(images)[0]
-                #---------------------------------------------------#
-                #   取出每一个像素点的种类
-                #---------------------------------------------------#
-                pr = F.softmax(pr.permute(1,2,0),dim = -1).cpu().numpy().argmax(axis=-1)
-                #--------------------------------------#
-                #   将灰条部分截取掉
-                #--------------------------------------#
-                pr = pr[int((self.input_shape[0] - nh) // 2) : int((self.input_shape[0] - nh) // 2 + nh), \
-                        int((self.input_shape[1] - nw) // 2) : int((self.input_shape[1] - nw) // 2 + nw)]
+            self._predict(image)
         t2 = time.time()
-        tact_time = (t2 - t1) / test_interval
-        return tact_time
+        return (t2 - t1) / test_interval
 
     def convert_to_onnx(self, simplify, model_path):
         import onnx
+        if is_segformer(self.backbone):
+            raise RuntimeError("ONNX 导出目前只支持 DeepLabV3+ 主干"
+                               "（SegFormer 的前向签名是 pixel_values=）")
         self.generate(onnx=True)
 
         im                  = torch.zeros(1, 3, *self.input_shape).to('cpu')  # image size(1, 3, 512, 512) BCHW
@@ -314,49 +237,5 @@ class DeeplabV3(object):
         print('Onnx model save as {}'.format(model_path))
     
     def get_miou_png(self, image):
-        #---------------------------------------------------------#
-        #   在这里将图像转换成RGB图像，防止灰度图在预测时报错。
-        #   代码仅仅支持RGB图像的预测，所有其它类型的图像都会转化成RGB
-        #---------------------------------------------------------#
-        image       = cvtColor(image)
-        orininal_h  = np.array(image).shape[0]
-        orininal_w  = np.array(image).shape[1]
-        #---------------------------------------------------------#
-        #   给图像增加灰条，实现不失真的resize
-        #   也可以直接resize进行识别
-        #---------------------------------------------------------#
-        image_data, nw, nh  = resize_image(image, (self.input_shape[1],self.input_shape[0]))
-        #---------------------------------------------------------#
-        #   添加上batch_size维度
-        #---------------------------------------------------------#
-        image_data  = np.expand_dims(np.transpose(preprocess_input(np.array(image_data, np.float32)), (2, 0, 1)), 0)
-
-        with torch.no_grad():
-            images = torch.from_numpy(image_data)
-            if self.cuda:
-                images = images.cuda()
-                
-            #---------------------------------------------------#
-            #   图片传入网络进行预测
-            #---------------------------------------------------#
-            pr = self.net(images)[0]
-            #---------------------------------------------------#
-            #   取出每一个像素点的种类
-            #---------------------------------------------------#
-            pr = F.softmax(pr.permute(1,2,0),dim = -1).cpu().numpy()
-            #--------------------------------------#
-            #   将灰条部分截取掉
-            #--------------------------------------#
-            pr = pr[int((self.input_shape[0] - nh) // 2) : int((self.input_shape[0] - nh) // 2 + nh), \
-                    int((self.input_shape[1] - nw) // 2) : int((self.input_shape[1] - nw) // 2 + nw)]
-            #---------------------------------------------------#
-            #   进行图片的resize
-            #---------------------------------------------------#
-            pr = cv2.resize(pr, (orininal_w, orininal_h), interpolation = cv2.INTER_LINEAR)
-            #---------------------------------------------------#
-            #   取出每一个像素点的种类
-            #---------------------------------------------------#
-            pr = pr.argmax(axis=-1)
-    
-        image = Image.fromarray(np.uint8(pr))
-        return image
+        pr = self._predict(cvtColor(image)).argmax(axis=-1)
+        return Image.fromarray(np.uint8(pr))

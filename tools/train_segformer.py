@@ -40,54 +40,31 @@ os.environ.setdefault("MPLBACKEND", "Agg")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-import cv2
 import numpy as np
 import torch
-import torch.nn.functional as F
-from PIL import Image
 from torch.utils.data import DataLoader
 
+from segcore import evaluate_hist, per_image_hists, read_split
 from utils.dataloader import DeeplabDataset, deeplab_dataset_collate
-from utils.utils import cvtColor, preprocess_input, resize_image, seed_everything
-from utils.utils_metrics import mean_metric, per_class_iu
+from utils.utils import seed_everything
 
 NAMES = ["_background_", "building", "sky", "tree", "way"]
 EXT7_NAMES = NAMES + ["farmland", "water"]
 REMOVE = [0]
-# ImageNet 归一化：预训练主干的输入约定（DeeplabDataset 只做了 /255）
+# ImageNet 归一化：预训练主干的输入约定（DeeplabDataset 只做了 /255）。
+# 训练侧仍需自己做；推理/评估侧由 segcore 统一处理。
 MEAN = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
 STD = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
 
 
-def evaluate(model, val_ids, input_shape, num_classes, device, voc):
-    """与 tools/compare_models.py 完全相同的评估协议"""
-    model.eval()
-    hist = np.zeros((num_classes, num_classes), np.int64)
-    with torch.no_grad():
-        for stem in val_ids:
-            img = cvtColor(Image.open(os.path.join(voc, "JPEGImages", stem + ".png")))
-            ow, oh = img.size
-            data, nw, nh = resize_image(img, (input_shape[1], input_shape[0]))
-            x = np.expand_dims(np.transpose(
-                preprocess_input(np.array(data, np.float32)), (2, 0, 1)), 0)
-            x = torch.from_numpy(x)
-            x = (x - MEAN) / STD
-            logits = model(pixel_values=x.to(device)).logits          # 1/4 分辨率
-            logits = F.interpolate(logits, size=tuple(input_shape),
-                                   mode="bilinear", align_corners=False)
-            pr = F.softmax(logits[0].permute(1, 2, 0), dim=-1).cpu().numpy()
-            pr = pr[(input_shape[0] - nh) // 2:(input_shape[0] - nh) // 2 + nh,
-                    (input_shape[1] - nw) // 2:(input_shape[1] - nw) // 2 + nw]
-            pr = cv2.resize(pr, (ow, oh), interpolation=cv2.INTER_LINEAR).argmax(-1)
-
-            gt = np.array(Image.open(os.path.join(voc, "SegmentationClass", stem + ".png")))
-            a, b = gt.flatten(), pr.flatten()
-            k = (a >= 0) & (a < num_classes)
-            hist += np.bincount(num_classes * a[k].astype(int) + b[k],
-                                minlength=num_classes ** 2).reshape(num_classes, num_classes)
+def evaluate(model, val_ids, input_shape, num_classes, device, voc_root,
+             backbone="segformer-b2"):
+    """评估协议来自 segcore，与 get_miou.py / compare_models 逐位一致。"""
+    hists = per_image_hists(model, val_ids, voc_root, num_classes,
+                            input_shape, device, backbone=backbone)
     model.train()
-    iou = per_class_iu(hist)
-    return mean_metric(iou, num_classes, REMOVE) * 100, iou
+    metrics = evaluate_hist(hists.sum(0), num_classes, REMOVE)
+    return metrics["miou"], metrics["iou"]
 
 
 def main():
@@ -120,10 +97,11 @@ def main():
     input_shape = [args.input_size, args.input_size]
     os.makedirs(args.save_dir, exist_ok=True)
 
-    voc = os.path.join(ROOT, args.voc_root, "VOC2007")
-    split_dir = os.path.join(voc, "ImageSets", "Segmentation")
+    #   voc_root 指向含 VOC2007/ 的目录（segcore 的约定），不要指到 VOC2007 里面
+    voc_root = os.path.join(ROOT, args.voc_root)
+    split_dir = os.path.join(voc_root, "VOC2007", "ImageSets", "Segmentation")
     train_lines = open(os.path.join(split_dir, "train.txt")).readlines()
-    val_ids = open(os.path.join(split_dir, "val.txt")).read().split()
+    val_ids = read_split(voc_root, "val")
     print(f"数据集 {args.voc_root}  train {len(train_lines)} / val {len(val_ids)}  "
           f"input {input_shape}  classes {num_classes}  device {device}")
 
@@ -180,7 +158,7 @@ def main():
             total_loss += out.loss.item()
 
         if (epoch + 1) % args.eval_period == 0 or epoch + 1 == args.epochs:
-            miou, iou = evaluate(model, val_ids, input_shape, num_classes, device, voc)
+            miou, iou = evaluate(model, val_ids, input_shape, num_classes, device, voc_root)
             tag = ""
             if miou >= best_miou:
                 best_miou, best_epoch = miou, epoch + 1
@@ -191,7 +169,7 @@ def main():
 
     print("\n==== final ====")
     model.load_state_dict(torch.load(best_path, map_location=device))
-    miou, iou = evaluate(model, val_ids, input_shape, num_classes, device, voc)
+    miou, iou = evaluate(model, val_ids, input_shape, num_classes, device, voc_root)
     print(f"best @ epoch {best_epoch}: fg mIoU {miou:.2f}")
     for i, name in enumerate(names):
         extra = "   (不计入平均)" if i in REMOVE else ""

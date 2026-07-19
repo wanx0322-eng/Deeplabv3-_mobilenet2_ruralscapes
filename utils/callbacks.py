@@ -2,21 +2,12 @@ import os
 
 import matplotlib
 import torch
-import torch.nn.functional as F
 
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 import scipy.signal
 
-import cv2
-import shutil
-import numpy as np
-
-from PIL import Image
-from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
-from .utils import cvtColor, preprocess_input, resize_image
-from .utils_metrics import compute_mIoU, mean_metric
 
 
 class LossHistory():
@@ -80,7 +71,8 @@ class LossHistory():
 
 class EvalCallback():
     def __init__(self, net, input_shape, num_classes, image_ids, dataset_path, log_dir, cuda, \
-            miou_out_path=".temp_miou_out", eval_flag=True, period=1, remove_classes=(0,)):
+            miou_out_path=".temp_miou_out", eval_flag=True, period=1, remove_classes=(0,), \
+            backbone="mobilenet"):
         super(EvalCallback, self).__init__()
 
         self.net                = net
@@ -90,9 +82,11 @@ class EvalCallback():
         self.dataset_path       = dataset_path
         self.log_dir            = log_dir
         self.cuda               = cuda
+        #   miou_out_path 保留仅为兼容既有调用方；评估已不再落盘中间 png
         self.miou_out_path      = miou_out_path
         self.eval_flag          = eval_flag
         self.period             = period
+        self.backbone           = backbone
         #-------------------------------------------------------------------#
         #   与 get_miou.py / 工作站评估页保持同一口径：默认只对前景类求平均。
         #-------------------------------------------------------------------#
@@ -106,79 +100,24 @@ class EvalCallback():
                 f.write(str(0))
                 f.write("\n")
 
-    def get_miou_png(self, image):
-        #---------------------------------------------------------#
-        #   在这里将图像转换成RGB图像，防止灰度图在预测时报错。
-        #   代码仅仅支持RGB图像的预测，所有其它类型的图像都会转化成RGB
-        #---------------------------------------------------------#
-        image       = cvtColor(image)
-        orininal_h  = np.array(image).shape[0]
-        orininal_w  = np.array(image).shape[1]
-        #---------------------------------------------------------#
-        #   给图像增加灰条，实现不失真的resize
-        #   也可以直接resize进行识别
-        #---------------------------------------------------------#
-        image_data, nw, nh  = resize_image(image, (self.input_shape[1],self.input_shape[0]))
-        #---------------------------------------------------------#
-        #   添加上batch_size维度
-        #---------------------------------------------------------#
-        image_data  = np.expand_dims(np.transpose(preprocess_input(np.array(image_data, np.float32)), (2, 0, 1)), 0)
-
-        with torch.no_grad():
-            images = torch.from_numpy(image_data)
-            if self.cuda:
-                images = images.cuda()
-                
-            #---------------------------------------------------#
-            #   图片传入网络进行预测
-            #---------------------------------------------------#
-            pr = self.net(images)[0]
-            #---------------------------------------------------#
-            #   取出每一个像素点的种类
-            #---------------------------------------------------#
-            pr = F.softmax(pr.permute(1,2,0),dim = -1).cpu().numpy()
-            #--------------------------------------#
-            #   将灰条部分截取掉
-            #--------------------------------------#
-            pr = pr[int((self.input_shape[0] - nh) // 2) : int((self.input_shape[0] - nh) // 2 + nh), \
-                    int((self.input_shape[1] - nw) // 2) : int((self.input_shape[1] - nw) // 2 + nw)]
-            #---------------------------------------------------#
-            #   进行图片的resize
-            #---------------------------------------------------#
-            pr = cv2.resize(pr, (orininal_w, orininal_h), interpolation = cv2.INTER_LINEAR)
-            #---------------------------------------------------#
-            #   取出每一个像素点的种类
-            #---------------------------------------------------#
-            pr = pr.argmax(axis=-1)
-    
-        image = Image.fromarray(np.uint8(pr))
-        return image
-    
     def on_epoch_end(self, epoch, model_eval):
         if epoch % self.period == 0 and self.eval_flag:
+            #---------------------------------------------------------------#
+            #   前向与评估协议来自 segcore（全项目唯一实现），与 get_miou.py /
+            #   工作站评估页 / train_worker 的周期评估逐位同口径。
+            #   这里以前自带一份 get_miou_png —— 那是 8 份拷贝之一。
+            #---------------------------------------------------------------#
+            from segcore import evaluate_hist, per_image_hists
+
             self.net    = model_eval
-            gt_dir      = os.path.join(self.dataset_path, "VOC2007/SegmentationClass/")
-            pred_dir    = os.path.join(self.miou_out_path, 'detection-results')
-            if not os.path.exists(self.miou_out_path):
-                os.makedirs(self.miou_out_path)
-            if not os.path.exists(pred_dir):
-                os.makedirs(pred_dir)
             print("Get miou.")
-            for image_id in tqdm(self.image_ids):
-                #-------------------------------#
-                #   从文件中读取图像
-                #-------------------------------#
-                image_path  = os.path.join(self.dataset_path, "VOC2007/JPEGImages/"+image_id+".png")
-                image       = Image.open(image_path)
-                #------------------------------#
-                #   获得预测txt
-                #------------------------------#
-                image       = self.get_miou_png(image)
-                image.save(os.path.join(pred_dir, image_id + ".png"))
-                        
+            device = next(model_eval.parameters()).device
+            hists = per_image_hists(model_eval, self.image_ids, self.dataset_path,
+                                    self.num_classes, self.input_shape, device,
+                                    backbone=self.backbone)
             print("Calculate miou.")
-            _, IoUs, _, _ = compute_mIoU(gt_dir, pred_dir, self.image_ids, self.num_classes, None, self.remove_classes)  # 执行计算mIoU的函数
-            temp_miou = mean_metric(IoUs, self.num_classes, self.remove_classes) * 100
+            temp_miou = evaluate_hist(hists.sum(0), self.num_classes,
+                                      self.remove_classes)["miou"]
 
             self.mious.append(temp_miou)
             self.epoches.append(epoch)
