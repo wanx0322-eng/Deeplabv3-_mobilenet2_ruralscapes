@@ -1,4 +1,4 @@
-﻿import "../theme"
+import "../theme"
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
@@ -27,8 +27,8 @@ Flickable {
         Components.SectionHeader {
             Layout.fillWidth: true
             number: "07"
-            title: "模型与导出"
-            description: "查看项目模型产物，选择检查点并导出可交付文件。"
+            title: qsTr("模型与导出")
+            description: qsTr("查看项目模型产物，选择检查点并导出可交付文件。")
         }
 
         RowLayout {
@@ -36,11 +36,11 @@ Flickable {
             spacing: 16
             Components.JournalCard {
                 Layout.preferredWidth: 300
-                title: "模型产物"
-                subtitle: "当前项目已登记的模型数量"
+                title: qsTr("模型产物")
+                subtitle: qsTr("当前项目已登记的模型数量")
                 reducedMotion: root.reducedMotion
                 Text {
-                    text: controller ? controller.artifactCount : 0
+                    text: root.controller ? root.controller.artifactCount : 0
                     color: Theme.field
                     font.family: Theme.fontFamily
                     font.pixelSize: 36
@@ -49,21 +49,21 @@ Flickable {
             }
             Components.JournalCard {
                 Layout.fillWidth: true
-                title: "已选模型"
-                subtitle: controller && controller.selectedModelPath.length > 0 ? controller.selectedModelPath : "尚未选择模型文件"
+                title: qsTr("已选模型")
+                subtitle: root.controller && root.controller.selectedModelPath.length > 0 ? root.controller.selectedModelPath : qsTr("尚未选择模型文件")
                 reducedMotion: root.reducedMotion
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 10
                     Components.StudioButton {
-                        text: "选择模型"
+                        text: qsTr("选择模型")
                         reducedMotion: root.reducedMotion
                         onClicked: root.chooseModelRequested()
                     }
                     Components.StudioButton {
-                        text: "导出"
+                        text: qsTr("导出")
                         accent: false
-                        enabled: controller && controller.selectedModelPath.length > 0
+                        enabled: root.controller && root.controller.selectedModelPath.length > 0
                         reducedMotion: root.reducedMotion
                         onClicked: root.exportRequested()
                     }
@@ -73,11 +73,11 @@ Flickable {
 
         Components.StudioTable {
             Layout.fillWidth: true
-            title: "模型列表"
+            title: qsTr("模型列表")
             Components.StudioTableRow {
-                primaryText: controller && controller.artifactCount > 0 ? "模型产物已登记" : "当前项目没有模型产物"
-                secondaryText: controller && controller.artifactCount > 0 ? "选择实际模型文件以查看和导出。" : "完成训练或导入已有检查点后，模型会出现在这里。"
-                trailingText: controller && controller.artifactCount > 0 ? "选择" : "空"
+                primaryText: root.controller && root.controller.artifactCount > 0 ? qsTr("模型产物已登记") : qsTr("当前项目没有模型产物")
+                secondaryText: root.controller && root.controller.artifactCount > 0 ? qsTr("选择实际模型文件以查看和导出。") : qsTr("完成训练或导入已有检查点后，模型会出现在这里。")
+                trailingText: root.controller && root.controller.artifactCount > 0 ? qsTr("选择") : qsTr("空")
             }
         }
     }

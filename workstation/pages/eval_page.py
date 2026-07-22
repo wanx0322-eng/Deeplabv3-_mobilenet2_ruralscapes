@@ -10,13 +10,13 @@ from PySide6.QtWidgets import (QComboBox, QFormLayout, QGroupBox, QHBoxLayout,
 from PySide6.QtCore import Qt
 
 from workstation.config import PROJECT_ROOT
-from workstation.core.models import scan_weights
-from workstation.widgets import StatRow, WorkerProcess
+from workstation.page_system import BasePage
+from workstation.widgets import StatRow, WeightPicker, WorkerProcess
 
 
-class EvalPage(QWidget):
+class EvalPage(BasePage):
     def __init__(self, config, parent=None):
-        super().__init__(parent)
+        super().__init__("精度评估 (mIoU)", parent)
         self.config = config
         self.worker = WorkerProcess(self)
         self.worker.message.connect(self._on_message)
@@ -25,23 +25,13 @@ class EvalPage(QWidget):
         self._build_ui()
 
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(10)
-        title = QLabel("精度评估 (mIoU)")
-        title.setObjectName("pageTitle")
-        layout.addWidget(title)
+        layout = self.page_layout
 
         top = QHBoxLayout()
         form_group = QGroupBox("评估配置")
         form = QFormLayout(form_group)
-        weights_row = QHBoxLayout()
-        self.weights_combo = QComboBox()
-        refresh = QPushButton("刷新")
-        refresh.setFixedWidth(48)
-        refresh.clicked.connect(self.refresh_weights)
-        weights_row.addWidget(self.weights_combo, 1)
-        weights_row.addWidget(refresh)
+        self.weight_picker = WeightPicker()
+        self.weights_combo = self.weight_picker.combo
         self.backbone = QComboBox()
         self.backbone.addItems(["mobilenet", "xception",
                                 "segformer-b0", "segformer-b1", "segformer-b2"])
@@ -55,7 +45,7 @@ class EvalPage(QWidget):
         self.input_size.setCurrentText(str(self.config.predict["input_shape"][0]))
         self.split_combo = QComboBox()
         self.split_combo.addItems(["val", "test", "train"])
-        form.addRow("权值文件", weights_row)
+        form.addRow("权值文件", self.weight_picker)
         form.addRow("主干网络", self.backbone)
         form.addRow("下采样倍数", self.downsample)
         form.addRow("输入尺寸", self.input_size)
@@ -103,24 +93,30 @@ class EvalPage(QWidget):
 
     def refresh_weights(self):
         current = self.weights_combo.currentData()
-        self.weights_combo.clear()
-        for w in scan_weights():
-            if w["name"].endswith(".onnx"):
-                continue
-            self.weights_combo.addItem(
-                f"{w['rel_path']}  ({w['size_mb']:.1f} MB)", w["rel_path"])
+        self.weight_picker.refresh()
         saved = current or self.config.predict.get("model_path")
         if saved:
-            index = self.weights_combo.findData(saved.replace("\\", "/"))
-            if index >= 0:
-                self.weights_combo.setCurrentIndex(index)
+            self.weight_picker.set_current_path(saved.replace("\\", "/"))
+
+    def refresh(self):
+        self.refresh_weights()
+
+    def has_running_task(self):
+        return self.worker.is_running()
+
+    def stop_running_task(self):
+        if not self.worker.is_running():
+            return False
+        self.worker.kill()
+        return True
+
 
     def start_eval(self):
         if self.worker.is_running():
             return
         rel = self.weights_combo.currentData()
         if not rel:
-            QMessageBox.warning(self, "错误", "没有可用的权值文件")
+            self.show_message("没有可用的权值文件", "error")
             return
         size = int(self.input_size.currentText())
         cfg = {
@@ -174,7 +170,7 @@ class EvalPage(QWidget):
         elif msg_type == "error":
             self._append_log("[错误] " + msg.get("message", ""))
         elif msg_type == "done":
-            self._append_log("✓ " + msg.get("message", "完成"))
+            self._append_log("[OK] " + msg.get("message", self.tr("完成")))
 
     def _append_log(self, text):
         self.console.appendPlainText(text)

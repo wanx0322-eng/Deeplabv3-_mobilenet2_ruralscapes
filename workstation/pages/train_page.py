@@ -16,15 +16,47 @@ from matplotlib.figure import Figure
 
 from workstation.config import PROJECT_ROOT
 from workstation.widgets import WorkerProcess
+from workstation.feedback import ConfigIssue, InlineMessage
+from workstation.page_system import BasePage
+from workstation.theme import DARK_TOKENS
 
 
 class LossCanvas(FigureCanvasQTAgg):
-    def __init__(self):
-        self.figure = Figure(figsize=(5, 3), facecolor="#262b33")
+    def __init__(self, tokens=DARK_TOKENS):
+        self.tokens = tokens
+        self.figure = Figure(figsize=(5, 3), facecolor=tokens.SURFACE_PANEL)
         super().__init__(self.figure)
         self.ax = self.figure.add_subplot(111)
         self.ax2 = self.ax.twinx()
+        self._configure_axes()
+        self.train_line, = self.ax.plot(
+            [], [], color=tokens.CHART_TRAIN, linewidth=1.6, label="train loss"
+        )
+        self.validation_line, = self.ax.plot(
+            [], [], color=tokens.CHART_VALIDATION, linewidth=1.6, label="val loss"
+        )
+        self.miou_line, = self.ax2.plot(
+            [], [], color=tokens.CHART_MIOU, linewidth=1.4,
+            linestyle="--", marker="o", markersize=3, label="val mIoU"
+        )
+        legend = self.ax.legend(
+            loc="upper right", fontsize=8,
+            facecolor=tokens.SURFACE_PANEL, edgecolor=tokens.BORDER_DEFAULT
+        )
+        for label in legend.get_texts():
+            label.set_color(tokens.CONTENT_PRIMARY)
         self.reset()
+
+    def _configure_axes(self):
+        for axis in (self.ax, self.ax2):
+            axis.set_facecolor(self.tokens.CHART_AXES)
+            axis.tick_params(colors=self.tokens.CONTENT_SECONDARY, labelsize=8)
+            for spine in axis.spines.values():
+                spine.set_color(self.tokens.BORDER_DEFAULT)
+        self.ax.set_xlabel("Epoch", color=self.tokens.CONTENT_SECONDARY, fontsize=9)
+        self.ax.set_ylabel("Loss", color=self.tokens.CONTENT_SECONDARY, fontsize=9)
+        self.ax2.set_ylabel("mIoU (%)", color=self.tokens.CHART_MIOU, fontsize=9)
+        self.ax.grid(True, color=self.tokens.CHART_GRID, linewidth=0.6)
 
     def reset(self):
         self.epochs, self.train_loss, self.val_loss = [], [], []
@@ -43,36 +75,19 @@ class LossCanvas(FigureCanvasQTAgg):
         self.redraw()
 
     def redraw(self):
-        for ax in (self.ax, self.ax2):
-            ax.clear()
-            ax.set_facecolor("#1a1d23")
-            ax.tick_params(colors="#9aa3b2", labelsize=8)
-            for spine in ax.spines.values():
-                spine.set_color("#3a4150")
-        self.ax.set_xlabel("Epoch", color="#9aa3b2", fontsize=9)
-        self.ax.set_ylabel("Loss", color="#9aa3b2", fontsize=9)
-        self.ax2.set_ylabel("mIoU (%)", color="#7bd88f", fontsize=9)
-        if self.epochs:
-            self.ax.plot(self.epochs, self.train_loss, color="#4f8cff",
-                         linewidth=1.6, label="train loss")
-            self.ax.plot(self.epochs, self.val_loss, color="#ff8c5f",
-                         linewidth=1.6, label="val loss")
-            legend = self.ax.legend(loc="upper right", fontsize=8,
-                                    facecolor="#262b33", edgecolor="#3a4150")
-            for text in legend.get_texts():
-                text.set_color("#e8eaf0")
-        if self.mious:
-            self.ax2.plot(self.miou_epochs, self.mious, color="#7bd88f",
-                          linewidth=1.4, linestyle="--", marker="o",
-                          markersize=3, label="val mIoU")
-        self.ax.grid(True, color="#2e343e", linewidth=0.6)
+        self.train_line.set_data(self.epochs, self.train_loss)
+        self.validation_line.set_data(self.epochs, self.val_loss)
+        self.miou_line.set_data(self.miou_epochs, self.mious)
+        for axis in (self.ax, self.ax2):
+            axis.relim()
+            axis.autoscale_view()
         self.figure.tight_layout()
         self.draw_idle()
 
 
-class TrainPage(QWidget):
+class TrainPage(BasePage):
     def __init__(self, config, parent=None):
-        super().__init__(parent)
+        super().__init__("模型训练", parent)
         self.config = config
         self.worker = WorkerProcess(self)
         self.worker.message.connect(self._on_message)
@@ -81,14 +96,18 @@ class TrainPage(QWidget):
         self._start_time = None
         self._build_ui()
 
+    def has_running_task(self):
+        return self.worker.is_running()
+
+    def stop_running_task(self):
+        if not self.worker.is_running():
+            return False
+        self.worker.kill()
+        return True
+
     # ---------------- UI ----------------
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(10)
-        title = QLabel("模型训练")
-        title.setObjectName("pageTitle")
-        layout.addWidget(title)
+        layout = self.page_layout
 
         splitter = QSplitter(Qt.Horizontal)
         layout.addWidget(splitter, 1)
@@ -207,7 +226,6 @@ class TrainPage(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(form_widget)
-        scroll.setStyleSheet("QScrollArea { border: none; }")
         splitter.addWidget(scroll)
 
         # ---- 右：监控 ----
@@ -216,6 +234,9 @@ class TrainPage(QWidget):
         right_layout.setContentsMargins(6, 0, 0, 0)
 
         control_row = QHBoxLayout()
+        self.config_message = InlineMessage()
+        right_layout.addWidget(self.config_message)
+
         self.start_btn = QPushButton("开始训练")
         self.start_btn.setObjectName("primary")
         self.start_btn.clicked.connect(self.start_training)
@@ -307,6 +328,7 @@ class TrainPage(QWidget):
         if self.worker.is_running():
             return
         cfg = self.collect_config()
+        self.config_message.clear()
         self._persist(cfg)
 
         #-----------------------------------------------------------------#
@@ -317,7 +339,7 @@ class TrainPage(QWidget):
         try:
             self.config.validate_or_raise()
         except ValueError as exc:
-            QMessageBox.warning(self, "配置有误", str(exc))
+            self.config_message.show_issue(ConfigIssue("training", str(exc)))
             return
 
         worker_cfg = dict(cfg)
@@ -333,7 +355,9 @@ class TrainPage(QWidget):
 
         if cfg["model_path"] and not os.path.exists(
                 self.config.abs_path(cfg["model_path"])):
-            QMessageBox.warning(self, "错误", f"初始权值不存在：{cfg['model_path']}")
+            self.config_message.show_issue(
+                ConfigIssue("model_path", f"初始权值不存在：{cfg['model_path']}")
+            )
             return
 
         save_dir = self.config.abs_path(cfg["save_dir"])
@@ -399,7 +423,7 @@ class TrainPage(QWidget):
             if msg.get("traceback"):
                 self._append_log(msg["traceback"])
         elif msg_type == "done":
-            self._append_log("✓ " + msg.get("message", "完成"))
+            self._append_log("[OK] " + msg.get("message", self.tr("完成")))
 
     def _append_log(self, text):
         self.console.appendPlainText(text)

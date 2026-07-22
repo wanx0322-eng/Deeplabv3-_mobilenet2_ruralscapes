@@ -16,6 +16,7 @@ from ruralscape_studio.native_app import (
     create_application,
     load_main_qml,
 )
+from ruralscape_studio.runtime import StudioRuntime
 from workstation.config import PROJECT_ROOT, Config
 from workstation.studio_bridge import (
     DatasetBackend,
@@ -96,6 +97,12 @@ def build_context(engine, config=None):
         backend.logLine.connect(console.append)
         context.setContextProperty(name, backend)
 
+    runtime = StudioRuntime(
+        controllers, backends, console, settings, mode="connected", parent=engine
+    )
+    engine.setInitialProperties({"runtime": runtime})
+    engine._studio_runtime = runtime
+
     #   项目信息直接来自当前工程目录，不需要用户再选一次
     controllers["projectController"].selectProject(
         "RuralScape", PROJECT_ROOT)
@@ -110,7 +117,7 @@ def create_engine(config=None, *, load=True):
     #   防止 Python 侧对象被 GC —— 它们的 parent 是 engine，这里再存一份引用
     engine.setProperty("studioControllerCount", len(controllers))
     engine.setProperty("studioBackendCount", len(backends))
-    engine._studio_objects = (controllers, backends, console)
+    engine._studio_objects = (controllers, backends, console, engine._studio_runtime)
     if load:
         load_main_qml(engine)
     return engine

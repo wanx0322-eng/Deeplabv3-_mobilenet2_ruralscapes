@@ -1,4 +1,4 @@
-﻿import "../theme"
+import "../theme"
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 
@@ -9,7 +9,7 @@ Button {
     implicitWidth: 46
     implicitHeight: 40
     hoverEnabled: true
-    Accessible.name: control.kind === "close" ? "关闭窗口" : control.kind === "maximize" ? "最大化或还原窗口" : "最小化窗口"
+    Accessible.name: control.kind === "close" ? qsTr("关闭窗口") : control.kind === "maximize" ? qsTr("最大化或还原窗口") : qsTr("最小化窗口")
 
     background: Rectangle {
         color: control.hovered ? (control.kind === "close" ? Theme.destructive : Theme.fieldLight) : "transparent"

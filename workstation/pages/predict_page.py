@@ -13,17 +13,17 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox,
 
 from workstation.config import PROJECT_ROOT
 from workstation.core.engine import SegEngine, compose_view, mask_statistics
-from workstation.core.models import scan_weights
 from workstation.core.qt_workers import PredictThread  # noqa: F401  移至 core，此处再导出兼容旧引用
-from workstation.widgets import TitledViewer, pil_to_qpixmap
+from workstation.page_system import BasePage
+from workstation.widgets import TitledViewer, WeightPicker, pil_to_qpixmap
 
 IMAGE_FILTER = "图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)"
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
 
 
-class PredictPage(QWidget):
+class PredictPage(BasePage):
     def __init__(self, config, parent=None):
-        super().__init__(parent)
+        super().__init__("图像预测", parent)
         self.config = config
         self.engine = SegEngine()
         self.thread = None
@@ -34,12 +34,7 @@ class PredictPage(QWidget):
 
     # ---------------- UI ----------------
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(10)
-        title = QLabel("图像预测")
-        title.setObjectName("pageTitle")
-        layout.addWidget(title)
+        layout = self.page_layout
 
         splitter = QSplitter(Qt.Horizontal)
         layout.addWidget(splitter, 1)
@@ -52,14 +47,8 @@ class PredictPage(QWidget):
 
         model_group = QGroupBox("模型")
         model_form = QFormLayout(model_group)
-        weights_row = QHBoxLayout()
-        self.weights_combo = QComboBox()
-        self.weights_combo.setMinimumWidth(180)
-        refresh = QPushButton("刷新")
-        refresh.setFixedWidth(48)
-        refresh.clicked.connect(self.refresh_weights)
-        weights_row.addWidget(self.weights_combo, 1)
-        weights_row.addWidget(refresh)
+        self.weight_picker = WeightPicker()
+        self.weights_combo = self.weight_picker.combo
         self.backbone = QComboBox()
         self.backbone.addItems(["mobilenet", "xception",
                                 "segformer-b0", "segformer-b1", "segformer-b2"])
@@ -84,7 +73,7 @@ class PredictPage(QWidget):
             "测试时增强：水平翻转 × 多尺度概率平均。\n"
             "边界更平滑、细小类别更稳，但单张耗时约 6 倍。\n"
             "批量大图或视频建议关闭。")
-        model_form.addRow("权值文件", weights_row)
+        model_form.addRow("权值文件", self.weight_picker)
         model_form.addRow("主干网络", self.backbone)
         model_form.addRow("下采样倍数", self.downsample)
         model_form.addRow("输入尺寸", self.input_size)
@@ -124,7 +113,10 @@ class PredictPage(QWidget):
         batch_btn.clicked.connect(self._batch_predict)
         self.batch_bar = QProgressBar()
         self.batch_bar.setVisible(False)
+        self.save_raw_mask = QCheckBox("批量同时保存类别索引 mask")
+        self.save_raw_mask.setChecked(True)
         batch_layout.addWidget(batch_btn)
+        batch_layout.addWidget(self.save_raw_mask)
         batch_layout.addWidget(self.batch_bar)
         left_layout.addWidget(batch_group)
 
@@ -162,17 +154,23 @@ class PredictPage(QWidget):
     # ---------------- 权值扫描 ----------------
     def refresh_weights(self):
         current = self.weights_combo.currentData()
-        self.weights_combo.clear()
-        for w in scan_weights():
-            if w["name"].endswith(".onnx"):
-                continue
-            self.weights_combo.addItem(
-                f"{w['rel_path']}  ({w['size_mb']:.1f} MB)", w["rel_path"])
+        self.weight_picker.refresh()
         saved = current or self.config.predict.get("model_path")
         if saved:
-            index = self.weights_combo.findData(saved.replace("\\", "/"))
-            if index >= 0:
-                self.weights_combo.setCurrentIndex(index)
+            self.weight_picker.set_current_path(saved.replace("\\", "/"))
+
+    def refresh(self):
+        self.refresh_weights()
+
+    def has_running_task(self):
+        return self._busy()
+
+    def stop_running_task(self):
+        if not self._busy():
+            return False
+        self.thread.requestInterruption()
+        return True
+
 
     def _load_params(self):
         rel = self.weights_combo.currentData()
@@ -207,7 +205,7 @@ class PredictPage(QWidget):
     # ---------------- 单张 ----------------
     def _open_and_predict(self):
         if self._busy():
-            QMessageBox.information(self, "提示", "正在推理中，请稍候")
+            self.show_message("正在推理中，请稍候", "info")
             return
         path, _ = QFileDialog.getOpenFileName(self, "选择图片", PROJECT_ROOT,
                                               IMAGE_FILTER)
@@ -216,11 +214,13 @@ class PredictPage(QWidget):
         try:
             params = self._load_params()
         except ValueError as exc:
-            QMessageBox.warning(self, "错误", str(exc))
+            self.show_message(str(exc), "error")
             return
         self._persist()
         self.current_path = path
-        self.status_label.setText("推理中…")
+        self.status_label.setText("正在加载模型…")
+        self.batch_bar.setRange(0, 0)
+        self.batch_bar.setVisible(True)
         self.thread = PredictThread(self.engine, params, [path],
                                     tta=self.tta_check.isChecked())
         self.thread.loaded.connect(self.status_label.setText)
@@ -229,6 +229,8 @@ class PredictPage(QWidget):
         self.thread.start()
 
     def _on_single_done(self, image, mask):
+        self.batch_bar.setVisible(False)
+        self.batch_bar.setRange(0, 100)
         self.current_image = image
         self.current_mask = mask
         self.view_orig.viewer.set_image(pil_to_qpixmap(image))
@@ -282,7 +284,7 @@ class PredictPage(QWidget):
     # ---------------- 批量 ----------------
     def _batch_predict(self):
         if self._busy():
-            QMessageBox.information(self, "提示", "正在推理中，请稍候")
+            self.show_message("正在推理中，请稍候", "info")
             return
         src = QFileDialog.getExistingDirectory(self, "选择输入文件夹", PROJECT_ROOT)
         if not src:
@@ -290,21 +292,18 @@ class PredictPage(QWidget):
         images = [os.path.join(src, fn) for fn in sorted(os.listdir(src))
                   if os.path.splitext(fn)[1].lower() in IMAGE_EXTS]
         if not images:
-            QMessageBox.warning(self, "错误", "该文件夹中没有图片")
+            self.show_message("该文件夹中没有图片", "error")
             return
         out = QFileDialog.getExistingDirectory(
             self, "选择输出文件夹",
             self.config.abs_path(self.config.predict["save_dir"]))
         if not out:
             return
-        save_mask = QMessageBox.question(
-            self, "保存原始 mask",
-            "是否同时保存类别索引 mask（用于评估/二次处理）？",
-            QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes
+        save_mask = self.save_raw_mask.isChecked()
         try:
             params = self._load_params()
         except ValueError as exc:
-            QMessageBox.warning(self, "错误", str(exc))
+            self.show_message(str(exc), "error")
             return
         self._persist()
         self.batch_bar.setVisible(True)
@@ -331,8 +330,7 @@ class PredictPage(QWidget):
     def _on_batch_done(self, count, out_dir):
         self.batch_bar.setVisible(False)
         self.status_label.setText(f"批量完成：成功 {count} 张 → {out_dir}")
-        QMessageBox.information(self, "批量预测完成",
-                                f"成功处理 {count} 张\n输出目录：{out_dir}")
+        self.show_message(f"成功处理 {count} 张，输出目录：{out_dir}", "success")
 
     def _on_failed(self, message):
         self.batch_bar.setVisible(False)

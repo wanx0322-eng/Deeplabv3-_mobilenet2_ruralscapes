@@ -1,4 +1,5 @@
-﻿import "../theme"
+pragma ComponentBehavior: Bound
+
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
@@ -26,14 +27,14 @@ Flickable {
         Components.SectionHeader {
             Layout.fillWidth: true
             number: "08"
-            title: "任务记录"
-            description: "查看本次工作期间实际创建的扫描、训练、识别与评估任务。"
+            title: qsTr("任务记录")
+            description: qsTr("查看本次工作期间实际创建的扫描、训练、识别与评估任务。")
         }
 
         Components.JournalCard {
             Layout.fillWidth: true
-            title: "任务筛选"
-            subtitle: controller && controller.runningCount > 0 ? "有任务正在运行" : "当前没有运行中的任务"
+            title: qsTr("任务筛选")
+            subtitle: root.controller && root.controller.runningCount > 0 ? qsTr("有任务正在运行") : qsTr("当前没有运行中的任务")
             reducedMotion: root.reducedMotion
 
             RowLayout {
@@ -42,11 +43,11 @@ Flickable {
                 ComboBox {
                     id: filterSelect
                     Layout.preferredWidth: 180
-                    model: ["全部状态", "等待中", "运行中", "已完成", "失败"]
+                    model: [qsTr("全部状态"), qsTr("等待中"), qsTr("运行中"), qsTr("已完成"), qsTr("失败")]
                     onActivated: root.statusFilter = ["all", "queued", "running", "completed", "failed"][currentIndex]
                 }
                 Components.StudioButton {
-                    text: "清空筛选"
+                    text: qsTr("清空筛选")
                     quiet: true
                     reducedMotion: root.reducedMotion
                     onClicked: {
@@ -56,26 +57,27 @@ Flickable {
                 }
                 Item { Layout.fillWidth: true }
                 Components.StatusPill {
-                    text: controller ? "运行中 " + controller.runningCount : "运行中 0"
-                    tone: controller && controller.runningCount > 0 ? "success" : "neutral"
+                    text: root.controller ? qsTr("运行中 ") + root.controller.runningCount : qsTr("运行中 0")
+                    tone: root.controller && root.controller.runningCount > 0 ? "success" : "neutral"
                 }
             }
         }
 
         Components.StudioTable {
             Layout.fillWidth: true
-            title: "任务"
+            title: qsTr("任务")
 
             Components.StudioTableRow {
-                visible: !controller || controller.tasks.length === 0
-                primaryText: "等待任务"
-                secondaryText: "执行数据扫描、训练、识别或评估后，真实任务记录会显示在这里。"
-                trailingText: "空"
+                visible: !root.controller || root.controller.tasks.length === 0
+                primaryText: qsTr("等待任务")
+                secondaryText: qsTr("执行数据扫描、训练、识别或评估后，真实任务记录会显示在这里。")
+                trailingText: qsTr("空")
             }
 
             Repeater {
-                model: controller ? controller.tasks : []
+                model: root.controller ? root.controller.tasks : []
                 delegate: Components.StudioTableRow {
+                    required property var modelData
                     visible: root.statusFilter === "all" || modelData.status === root.statusFilter
                     primaryText: modelData.title
                     secondaryText: modelData.kind

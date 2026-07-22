@@ -1,4 +1,6 @@
-﻿import "theme"
+pragma ComponentBehavior: Bound
+
+import "theme"
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
@@ -7,6 +9,7 @@ import "pages" as Pages
 
 ApplicationWindow {
     id: root
+    required property var runtime
     visible: true
     width: 1440
     height: 900
@@ -17,17 +20,17 @@ ApplicationWindow {
     flags: Qt.Window | Qt.FramelessWindowHint
 
     property int currentIndex: 0
-    readonly property bool reducedMotion: appSettings.reducedMotion
+    readonly property bool reducedMotion: runtime.appSettings.reducedMotion
     readonly property int motionDuration: reducedMotion ? 0 : Theme.motionDuration
     readonly property var navigation: [
-        { "number": "01", "label": "项目概览" },
-        { "number": "02", "label": "数据集" },
-        { "number": "03", "label": "标注工作台" },
-        { "number": "04", "label": "训练中心" },
-        { "number": "05", "label": "识别工作台" },
-        { "number": "06", "label": "评估报告" },
-        { "number": "07", "label": "模型与导出" },
-        { "number": "08", "label": "任务记录" }
+        { "number": "01", "label": qsTr("项目概览") },
+        { "number": "02", "label": qsTr("数据集") },
+        { "number": "03", "label": qsTr("标注工作台") },
+        { "number": "04", "label": qsTr("训练中心") },
+        { "number": "05", "label": qsTr("识别工作台") },
+        { "number": "06", "label": qsTr("评估报告") },
+        { "number": "07", "label": qsTr("模型与导出") },
+        { "number": "08", "label": qsTr("任务记录") }
     ]
 
     Rectangle {
@@ -125,7 +128,7 @@ ApplicationWindow {
                 Layout.bottomMargin: 18
                 spacing: 6
                 Text {
-                    text: projectController.hasProject ? projectController.projectName : "未打开项目"
+                    text: root.runtime.projectController.hasProject ? root.runtime.projectController.projectName : qsTr("未打开项目")
                     color: Theme.fieldForeground
                     font.family: Theme.fontFamily
                     font.pixelSize: 17
@@ -134,7 +137,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                 }
                 Text {
-                    text: projectController.hasProject ? projectController.rootPath : "选择项目后开始工作"
+                    text: root.runtime.projectController.hasProject ? root.runtime.projectController.rootPath : qsTr("选择项目后开始工作")
                     color: Theme.fieldForegroundMuted
                     font.family: Theme.fontFamily
                     font.pixelSize: 11
@@ -176,14 +179,14 @@ ApplicationWindow {
                     color: Theme.acid
                 }
                 Text {
-                    text: "本地工作台"
+                    text: qsTr("本地工作台")
                     color: Theme.fieldForegroundMuted
                     font.family: Theme.fontFamily
                     font.pixelSize: 12
                 }
                 Item { Layout.fillWidth: true }
                 Text {
-                    text: taskManager.runningCount > 0 ? "任务 " + taskManager.runningCount : "空闲"
+                    text: root.runtime.taskManager.runningCount > 0 ? qsTr("任务 ") + root.runtime.taskManager.runningCount : qsTr("空闲")
                     color: Theme.fieldForegroundMuted
                     font.family: Theme.fontFamily
                     font.pixelSize: 11
@@ -214,48 +217,65 @@ ApplicationWindow {
                     currentIndex: root.currentIndex
 
                     Pages.ProjectOverview {
-                        controller: projectController
+                        controller: root.runtime.projectController
                         reducedMotion: root.reducedMotion
                     }
                     Pages.DatasetPage {
-                        controller: datasetController
+                        controller: root.runtime.datasetController
                         reducedMotion: root.reducedMotion
-                        // 后端由 workstation/studio_app.py 注入；用 native_app.py
-                        // 单独加载外壳时不存在，这里判空后再调用。
-                        onChooseDirectoryRequested: if (typeof datasetBackend !== "undefined") datasetBackend.useProjectDataset()
-                        onScanRequested: if (typeof datasetBackend !== "undefined") datasetBackend.scan()
+                        onChooseDirectoryRequested: root.runtime.datasetBackend.useProjectDataset()
+                        onScanRequested: root.runtime.datasetBackend.scan()
                     }
                     Pages.AnnotationWorkbench {
-                        controller: annotationController
+                        controller: root.runtime.annotationController
                         reducedMotion: root.reducedMotion
                     }
                     Pages.TrainingCenter {
-                        controller: trainingController
+                        controller: root.runtime.trainingController
                         reducedMotion: root.reducedMotion
-                        onStartRequested: if (typeof trainingBackend !== "undefined") trainingBackend.start()
-                        onStopRequested: if (typeof trainingBackend !== "undefined") trainingBackend.requestStop()
+                        onStartRequested: root.runtime.trainingBackend.start()
+                        onStopRequested: root.runtime.trainingBackend.requestStop()
                     }
                     Pages.InferenceWorkbench {
-                        controller: inferenceController
+                        controller: root.runtime.inferenceController
                         reducedMotion: root.reducedMotion
-                        onStartRequested: if (typeof inferenceBackend !== "undefined") inferenceBackend.start()
+                        onStartRequested: root.runtime.inferenceBackend.start()
                     }
                     Pages.EvaluationReport {
-                        controller: evaluationController
+                        controller: root.runtime.evaluationController
                         reducedMotion: root.reducedMotion
-                        onStartRequested: if (typeof evaluationBackend !== "undefined") evaluationBackend.start("")
+                        onStartRequested: root.runtime.evaluationBackend.start("")
                     }
                     Pages.ModelsExport {
-                        controller: modelController
+                        controller: root.runtime.modelController
                         reducedMotion: root.reducedMotion
-                        onChooseModelRequested: if (typeof modelBackend !== "undefined") modelBackend.refresh()
+                        onChooseModelRequested: root.runtime.modelBackend.refresh()
                     }
                     Pages.TaskHistory {
-                        controller: taskManager
+                        controller: root.runtime.taskManager
                         reducedMotion: root.reducedMotion
                     }
                 }
             }
+        }
+    }
+    Rectangle {
+        visible: root.runtime.isDemo
+        anchors.top: titleBar.bottom
+        anchors.right: parent.right
+        anchors.margins: 12
+        width: demoLabel.implicitWidth + 20
+        height: 30
+        radius: Theme.buttonRadius
+        color: Theme.acid
+        z: 100
+
+        Text {
+            id: demoLabel
+            anchors.centerIn: parent
+            text: qsTr("实验预览版 · DEMO")
+            color: Theme.field
+            font.bold: true
         }
     }
 }

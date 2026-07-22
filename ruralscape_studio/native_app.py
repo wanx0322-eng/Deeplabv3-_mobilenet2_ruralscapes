@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Sequence
 
 from PySide6.QtCore import Property, QObject, QUrl
-from PySide6.QtGui import QFont, QFontDatabase, QFontMetrics, QGuiApplication
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
@@ -22,6 +22,10 @@ from .controllers import (
     TaskManager,
     TrainingController,
 )
+from .runtime import RuntimeConsole, StudioRuntime, build_demo_backends
+from workstation.fonts import configure_application_font
+from workstation.i18n import install_translation, resolve_language
+
 
 
 class AppSettings(QObject):
@@ -54,51 +58,23 @@ def qml_path() -> Path:
 
 
 def _configure_application_font(application: QGuiApplication) -> None:
-    sample = ord("项")
-    preferred = ("Inter", "Microsoft YaHei UI", "Noto Sans CJK SC", "Arial Unicode MS")
-    families = set(QFontDatabase.families())
-    selected = next(
-        (
-            family
-            for family in preferred
-            if family in families and QFontMetrics(QFont(family)).inFontUcs4(sample)
-        ),
-        "",
-    )
-    if not selected:
-        font_root = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
-        for filename in ("msyh.ttc", "ARIALUNI.ttf", "simhei.ttf"):
-            candidate = font_root / filename
-            if not candidate.is_file():
-                continue
-            font_id = QFontDatabase.addApplicationFont(str(candidate))
-            if font_id < 0:
-                continue
-            loaded = QFontDatabase.applicationFontFamilies(font_id)
-            selected = next(
-                (
-                    family
-                    for family in loaded
-                    if QFontMetrics(QFont(family)).inFontUcs4(sample)
-                ),
-                "",
-            )
-            if selected:
-                break
-    if selected:
-        application.setFont(QFont(selected, 10))
+    configure_application_font(application)
 
 
 def create_application(argv: Sequence[str] | None = None) -> QGuiApplication:
     QQuickStyle.setStyle("Basic")
+    arguments = list(argv) if argv is not None else sys.argv
+    language = resolve_language(arguments)
     existing = QGuiApplication.instance()
     if existing is not None:
         _configure_application_font(existing)
+        install_translation(existing, language)
         return existing
-    application = QGuiApplication(list(argv) if argv is not None else sys.argv)
+    application = QGuiApplication(arguments)
     application.setApplicationName("RuralScape Studio")
     application.setOrganizationName("RuralScape Studio")
     _configure_application_font(application)
+    install_translation(application, language)
     return application
 
 
@@ -106,13 +82,27 @@ def create_engine(*, load: bool = True) -> QQmlApplicationEngine:
     engine = QQmlApplicationEngine()
     context = engine.rootContext()
     context_objects: list[QObject] = []
+    controllers: dict[str, QObject] = {}
     for name, factory in CONTEXT_FACTORIES.items():
         controller = factory(engine)
         context.setContextProperty(name, controller)
         context_objects.append(controller)
+        controllers[name] = controller
     settings = AppSettings(engine)
     context.setContextProperty("appSettings", settings)
     context_objects.append(settings)
+    console = RuntimeConsole(engine)
+    backends = build_demo_backends(console, engine)
+    for name, backend in backends.items():
+        context.setContextProperty(name, backend)
+    context.setContextProperty("console", console)
+    runtime = StudioRuntime(
+        controllers, backends, console, settings, mode="demo", parent=engine
+    )
+    engine.setInitialProperties({"runtime": runtime})
+    engine._studio_runtime = runtime
+    engine._studio_objects = (controllers, backends, console, settings, runtime)
+
     engine.setProperty("contextObjectCount", len(context_objects))
     if load:
         load_main_qml(engine)

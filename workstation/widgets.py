@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QSizePolicy,
                                QVBoxLayout, QWidget)
 
 from workstation.core.qt_workers import WorkerProcess, python_exe  # noqa: F401
+from workstation.weight_picker import WeightPicker  # noqa: F401
 
 
 def pil_to_qpixmap(pil_image):
@@ -30,9 +31,7 @@ class ImageViewer(QLabel):
         self.setAlignment(Qt.AlignCenter)
         self.setMinimumSize(160, 120)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.setStyleSheet(
-            "background-color: #14161a; border: 1px solid #3a4150; "
-            "border-radius: 6px; color: #5d6673;")
+        self.setObjectName("imageViewer")
         self.setText(placeholder)
 
     def set_image(self, pixmap):
@@ -73,7 +72,7 @@ class TitledViewer(QWidget):
 def hline():
     line = QFrame()
     line.setFrameShape(QFrame.HLine)
-    line.setStyleSheet("color: #3a4150;")
+    line.setObjectName("separator")
     return line
 
 
@@ -87,16 +86,15 @@ class StatRow(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         for key, title in items:
             card = QFrame()
-            card.setStyleSheet(
-                "QFrame { background: #262b33; border: 1px solid #3a4150; "
-                "border-radius: 8px; }")
+            card.setObjectName("statCard")
             v = QVBoxLayout(card)
             v.setContentsMargins(12, 8, 12, 8)
             v.setSpacing(2)
             value = QLabel("-")
-            value.setStyleSheet("font-size: 20px; font-weight: bold; border: none;")
+            value.setObjectName("statValue")
+            value.setAccessibleName(title)
             caption = QLabel(title)
-            caption.setStyleSheet("color: #9aa3b2; border: none;")
+            caption.setObjectName("statCaption")
             v.addWidget(value)
             v.addWidget(caption)
             layout.addWidget(card)

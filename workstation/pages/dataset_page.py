@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QAbstractItemView, QColorDialog, QComboBox,
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QColorDialog, QComboBox,
                                QDialog, QDialogButtonBox, QDoubleSpinBox,
                                QFileDialog, QFormLayout, QGroupBox,
                                QHBoxLayout, QHeaderView, QInputDialog, QLabel,
@@ -15,7 +15,10 @@ from PySide6.QtWidgets import (QAbstractItemView, QColorDialog, QComboBox,
                                QVBoxLayout, QWidget)
 
 from workstation.core.dataset import DatasetManager
+from workstation.async_images import PreviewLoader
 from workstation.widgets import StatRow, TitledViewer, pil_to_qpixmap
+from workstation.page_system import BasePage
+from workstation.theme import DARK_TOKENS
 
 
 class LabelCheckThread(QThread):
@@ -58,28 +61,31 @@ class SplitDialog(QDialog):
         form.addRow(buttons)
 
 
-class DatasetPage(QWidget):
+class DatasetPage(BasePage):
     dataset_changed = Signal()
 
     def __init__(self, config, parent=None):
-        super().__init__(parent)
+        super().__init__(self.tr("数据管理"), parent)
         self.config = config
         self.entries = []
+        self.preview_loader = PreviewLoader(self)
+        self.preview_loader.ready.connect(self._on_preview_ready)
+        self.preview_loader.failed.connect(self._on_preview_failed)
+        self._preview_request = 0
         self._build_ui()
 
     @property
     def manager(self):
         return DatasetManager(self.config.voc2007_dir())
 
+    def bind_workspace_events(self, events):
+        self.dataset_changed.connect(lambda: events.publish("dataset"))
+        events.subscribe("labels", lambda _payload: self.refresh())
+
+
     # ---------------- UI ----------------
     def _build_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(10)
-
-        title = QLabel("数据管理")
-        title.setObjectName("pageTitle")
-        layout.addWidget(title)
+        layout = self.page_layout
 
         self.stats = StatRow([("total", "全部图片"), ("train", "训练集"),
                               ("val", "验证集"), ("test", "测试集"),
@@ -129,6 +135,8 @@ class DatasetPage(QWidget):
         btn_row1.addWidget(import_label_btn)
         btn_row1.addWidget(delete_btn)
         left_layout.addLayout(btn_row1)
+        self.match_labels = QCheckBox("导入图片时从文件夹匹配同名标签")
+        left_layout.addWidget(self.match_labels)
 
         btn_row2 = QHBoxLayout()
         split_btn = QPushButton("随机划分…")
@@ -203,9 +211,9 @@ class DatasetPage(QWidget):
         for row, e in enumerate(self.entries):
             self.table.setItem(row, 0, QTableWidgetItem(e.stem))
             self.table.setItem(row, 1, QTableWidgetItem(e.split))
-            label_item = QTableWidgetItem("✓" if e.label_path else "✗ 缺失")
+            label_item = QTableWidgetItem(self.tr("有") if e.label_path else self.tr("缺失"))
             if not e.label_path:
-                label_item.setForeground(QColor("#e0685f"))
+                label_item.setForeground(QColor(DARK_TOKENS.FEEDBACK_ERROR_MUTED))
             self.table.setItem(row, 2, label_item)
         self._apply_filter()
         self._load_class_table()
@@ -232,25 +240,34 @@ class DatasetPage(QWidget):
         if not rows:
             return
         entry = self.entries[rows[0]]
-        try:
-            image = Image.open(entry.image_path).convert("RGB")
-            self.view_image.viewer.set_image(pil_to_qpixmap(image))
-        except Exception:
-            self.view_image.viewer.clear_image()
+        self.view_image.viewer.setText(self.tr("正在加载预览…"))
+        self.view_label.viewer.clear_image()
+        self.view_overlay.viewer.clear_image()
+        self._preview_request = self.preview_loader.load(
+            entry.image_path, entry.label_path
+        )
+
+    def _on_preview_ready(self, request_id, image, mask_image):
+        if request_id != self._preview_request:
             return
-        if entry.label_path and os.path.exists(entry.label_path):
-            try:
-                mask = np.array(Image.open(entry.label_path), np.uint8)
-                if mask.ndim == 3:
-                    mask = mask[..., 0]
-                seg = Image.fromarray(self._palette()[mask])
-                self.view_label.viewer.set_image(pil_to_qpixmap(seg))
-                overlay = Image.blend(image, seg.resize(image.size, Image.NEAREST), 0.6)
-                self.view_overlay.viewer.set_image(pil_to_qpixmap(overlay))
-            except Exception:
-                self.view_label.viewer.clear_image()
-                self.view_overlay.viewer.clear_image()
-        else:
+        self.view_image.viewer.set_image(pil_to_qpixmap(image))
+        if mask_image is None:
+            self.view_label.viewer.clear_image()
+            self.view_overlay.viewer.clear_image()
+            return
+        mask = np.array(mask_image, np.uint8)
+        if mask.ndim == 3:
+            mask = mask[..., 0]
+        seg = Image.fromarray(self._palette()[mask])
+        self.view_label.viewer.set_image(pil_to_qpixmap(seg))
+        overlay = Image.blend(
+            image, seg.resize(image.size, Image.Resampling.NEAREST), 0.6
+        )
+        self.view_overlay.viewer.set_image(pil_to_qpixmap(overlay))
+
+    def _on_preview_failed(self, request_id, _message):
+        if request_id == self._preview_request:
+            self.view_image.viewer.clear_image()
             self.view_label.viewer.clear_image()
             self.view_overlay.viewer.clear_image()
 
@@ -265,11 +282,8 @@ class DatasetPage(QWidget):
             "图片 (*.png *.jpg *.jpeg *.bmp *.tif *.tiff)")
         if not files:
             return
-        answer = QMessageBox.question(
-            self, "匹配标签", "是否同时从某个文件夹按同名匹配导入标签 png？",
-            QMessageBox.Yes | QMessageBox.No)
         label_dir = None
-        if answer == QMessageBox.Yes:
+        if self.match_labels.isChecked():
             label_dir = QFileDialog.getExistingDirectory(self, "选择标签文件夹")
             if not label_dir:
                 label_dir = None
@@ -280,7 +294,7 @@ class DatasetPage(QWidget):
         if skipped:
             msg += f"\n跳过 {len(skipped)} 个：\n" + "\n".join(
                 f"  {os.path.basename(s)}: {r}" for s, r in skipped[:10])
-        QMessageBox.information(self, "导入完成", msg)
+        self.show_message(msg, "success")
         self.refresh()
         self.dataset_changed.emit()
 
@@ -293,14 +307,14 @@ class DatasetPage(QWidget):
         msg = f"导入标签 {imported} 张"
         if skipped:
             msg += f"\n跳过 {len(skipped)} 个"
-        QMessageBox.information(self, "导入完成", msg)
+        self.show_message(msg, "success")
         self.refresh()
         self.dataset_changed.emit()
 
     def _delete_selected(self):
         stems = self._selected_stems()
         if not stems:
-            QMessageBox.information(self, "提示", "请先在列表中选择要删除的条目")
+            self.show_message("请先在列表中选择要删除的条目", "error")
             return
         answer = QMessageBox.question(
             self, "确认删除",
@@ -309,8 +323,9 @@ class DatasetPage(QWidget):
         if answer != QMessageBox.Yes:
             return
         trash = self.manager.delete_entries(stems)
-        QMessageBox.information(self, "已删除",
-                                f"已移入回收目录：\n{trash}\n如需恢复可手动移回。")
+        self.show_message(
+            f"已移入回收目录：{trash}。如需恢复可手动移回。", "success"
+        )
         self.refresh()
         self.dataset_changed.emit()
 
@@ -325,9 +340,9 @@ class DatasetPage(QWidget):
         self.config.save()
         n_train, n_val, n_test = self.manager.random_split(
             cfg["trainval_percent"], cfg["train_percent"], cfg["split_seed"])
-        QMessageBox.information(
-            self, "划分完成",
-            f"训练集 {n_train} 张 / 验证集 {n_val} 张 / 测试集 {n_test} 张")
+        self.show_message(
+            f"训练集 {n_train} 张 / 验证集 {n_val} 张 / 测试集 {n_test} 张", "success"
+        )
         self.refresh()
         self.dataset_changed.emit()
 
@@ -370,9 +385,9 @@ class DatasetPage(QWidget):
         lines.append("-" * 40)
         if problems:
             lines.append("发现问题：")
-            lines.extend("  ⚠ " + p for p in problems)
+            lines.extend("  [!] " + p for p in problems)
         else:
-            lines.append("✓ 未发现格式问题")
+            lines.append(self.tr("未发现格式问题"))
         dialog = QDialog(self)
         dialog.setWindowTitle("数据集检查结果")
         dialog.resize(560, 420)
@@ -419,7 +434,7 @@ class DatasetPage(QWidget):
 
     def _remove_class(self):
         if self.class_table.rowCount() <= 2:
-            QMessageBox.warning(self, "提示", "至少保留背景 + 1 个前景类别")
+            self.show_message("至少保留背景 + 1 个前景类别", "error")
             return
         self.class_table.removeRow(self.class_table.rowCount() - 1)
 
@@ -428,7 +443,7 @@ class DatasetPage(QWidget):
         for row in range(self.class_table.rowCount()):
             name = self.class_table.item(row, 0).text().strip()
             if not name:
-                QMessageBox.warning(self, "错误", f"第 {row} 行类别名为空")
+                self.show_message(f"第 {row} 行类别名为空", "error")
                 return
             names.append(name)
             qcolor = self.class_table.item(row, 1).background().color()
@@ -436,8 +451,9 @@ class DatasetPage(QWidget):
         self.config.dataset["class_names"] = names
         self.config.dataset["class_colors"] = colors
         self.config.save()
-        QMessageBox.information(
-            self, "已保存",
-            f"共 {len(names)} 个类别（num_classes={len(names)}）。\n"
-            "注意：修改类别数后需要重新训练，且预测时的权值要与类别数匹配。")
+        self.show_message(
+            f"已保存 {len(names)} 个类别（num_classes={len(names)}）。"
+            "修改类别数后需要重新训练，预测权值也必须匹配。",
+            "success",
+        )
         self.dataset_changed.emit()

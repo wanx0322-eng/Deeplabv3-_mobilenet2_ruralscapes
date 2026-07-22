@@ -113,13 +113,15 @@ def test_theme_singleton_centralizes_exact_foundation_tokens() -> None:
     for token in ("#F2EBDD", "#173C2D", "#C7F464", "#111827", "#6B7280"):
         assert token in source
     assert "pragma Singleton" in source
-    assert "Qt.application.font.family" in source
+    assert 'readonly property string fontFamily: ""' in source
+    assert "Qt.application.font.family" not in source
     assert "singleton Theme 1.0 Theme.qml" in qmldir.read_text(encoding="utf-8")
 
     qml_files = [qml_file for qml_file in QML.rglob("*.qml") if qml_file != theme]
     for qml_file in qml_files:
         qml_source = qml_file.read_text(encoding="utf-8")
-        assert 'import "theme"' in qml_source or 'import "../theme"' in qml_source
+        if "Theme." in qml_source:
+            assert 'import "theme"' in qml_source or 'import "../theme"' in qml_source
         assert "#111827" not in qml_source
         assert "#6B7280" not in qml_source
         assert re.search(r"#[0-9A-Fa-f]{6,8}", qml_source) is None

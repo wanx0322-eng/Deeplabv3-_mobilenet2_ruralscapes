@@ -1,4 +1,4 @@
-﻿import "../theme"
+import "../theme"
 import QtQuick 2.15
 
 Rectangle {
@@ -31,7 +31,7 @@ Rectangle {
         anchors.right: parent.right
         anchors.rightMargin: 14
         anchors.verticalCenter: parent.verticalCenter
-        text: "关闭"
+        text: qsTr("关闭")
         color: Theme.errorText
         font.family: Theme.fontFamily
         font.pixelSize: 12

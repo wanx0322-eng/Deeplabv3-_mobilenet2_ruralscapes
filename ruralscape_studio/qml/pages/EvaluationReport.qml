@@ -1,4 +1,4 @@
-﻿import "../theme"
+import "../theme"
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
@@ -26,8 +26,8 @@ Flickable {
         Components.SectionHeader {
             Layout.fillWidth: true
             number: "06"
-            title: "评估报告"
-            description: "在指定数据划分上执行评估，并从实际结果生成报告。"
+            title: qsTr("评估报告")
+            description: qsTr("在指定数据划分上执行评估，并从实际结果生成报告。")
         }
 
         RowLayout {
@@ -36,15 +36,15 @@ Flickable {
 
             Components.JournalCard {
                 Layout.preferredWidth: 360
-                title: "评估设置"
-                subtitle: "选择数据划分后创建评估任务。"
+                title: qsTr("评估设置")
+                subtitle: qsTr("选择数据划分后创建评估任务。")
                 reducedMotion: root.reducedMotion
 
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 12
                     Text {
-                        text: "数据划分"
+                        text: qsTr("数据划分")
                         color: Theme.primaryText
                         font.family: Theme.fontFamily
                         font.pixelSize: 12
@@ -52,14 +52,14 @@ Flickable {
                     }
                     ComboBox {
                         Layout.fillWidth: true
-                        model: ["训练集", "验证集", "测试集"]
-                        currentIndex: controller && controller.split === "train" ? 0 : controller && controller.split === "test" ? 2 : 1
-                        onActivated: if (controller) controller.selectSplit(currentIndex === 0 ? "train" : currentIndex === 2 ? "test" : "val")
+                        model: [qsTr("训练集"), qsTr("验证集"), qsTr("测试集")]
+                        currentIndex: root.controller && root.controller.split === "train" ? 0 : root.controller && root.controller.split === "test" ? 2 : 1
+                        onActivated: if (root.controller) root.controller.selectSplit(currentIndex === 0 ? "train" : currentIndex === 2 ? "test" : "val")
                     }
                     Components.StudioButton {
                         Layout.fillWidth: true
-                        text: "开始评估"
-                        enabled: controller && !controller.running
+                        text: qsTr("开始评估")
+                        enabled: root.controller && !root.controller.running
                         reducedMotion: root.reducedMotion
                         onClicked: root.startRequested()
                     }
@@ -68,20 +68,20 @@ Flickable {
 
             Components.JournalCard {
                 Layout.fillWidth: true
-                title: "报告内容"
-                subtitle: controller && controller.hasReport ? controller.reportPath : "尚无评估报告"
+                title: qsTr("报告内容")
+                subtitle: root.controller && root.controller.hasReport ? root.controller.reportPath : qsTr("尚无评估报告")
                 reducedMotion: root.reducedMotion
 
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 14
                     Components.StatusPill {
-                        text: controller && controller.running ? "评估中" : controller && controller.hasReport ? "报告已生成" : "等待评估"
-                        tone: controller && controller.hasReport ? "success" : "neutral"
+                        text: root.controller && root.controller.running ? qsTr("评估中") : root.controller && root.controller.hasReport ? qsTr("报告已生成") : qsTr("等待评估")
+                        tone: root.controller && root.controller.hasReport ? "success" : "neutral"
                     }
                     Text {
                         Layout.fillWidth: true
-                        text: controller && controller.hasReport ? "报告将显示真实的类别指标、混淆信息与导出路径。" : "完成评估后，这里显示实际计算结果；当前不展示示例指标。"
+                        text: root.controller && root.controller.hasReport ? qsTr("报告将显示真实的类别指标、混淆信息与导出路径。") : qsTr("完成评估后，这里显示实际计算结果；当前不展示示例指标。")
                         color: Theme.secondaryText
                         font.family: Theme.fontFamily
                         font.pixelSize: 14
@@ -89,8 +89,8 @@ Flickable {
                     }
                     Components.StudioProgress {
                         Layout.fillWidth: true
-                        visible: controller && controller.running
-                        value: controller ? controller.progress : 0
+                        visible: root.controller && root.controller.running
+                        value: root.controller ? root.controller.progress : 0
                         reducedMotion: root.reducedMotion
                     }
                 }

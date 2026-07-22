@@ -22,7 +22,8 @@ thop
 torchsummary
 
 # 图形工作站 (python run_workstation.py / python run_studio.py)
-PySide6
+PySide6==6.11.1
+shiboken6==6.11.1
 
 # 配置校验 (workstation/config_schema.py) 与 ruralscape_studio 的领域模型
 pydantic>=2

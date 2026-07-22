@@ -34,7 +34,7 @@ QtObject {
     readonly property color errorBorder: "#D89A91"
     readonly property color destructive: "#B84236"
 
-    readonly property string fontFamily: Qt.application.font.family
+    readonly property string fontFamily: ""
     readonly property int cardRadius: 16
     readonly property int buttonRadius: 8
     readonly property int motionDuration: 200
